@@ -8,7 +8,7 @@ Connect Claude, Cursor, Windsurf, or any MCP-compatible AI agent to your Cynco a
 
 52 tools &middot; 4 guided prompts &middot; 3 reference guides
 
-[![npm](https://img.shields.io/npm/v/@cynco/mcp)](https://www.npmjs.com/package/@cynco/mcp)
+[![npm](https://img.shields.io/npm/v/cynco-mcp?color=blue)](https://www.npmjs.com/package/cynco-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 
@@ -34,13 +34,13 @@ The server implements the [Model Context Protocol](https://modelcontextprotocol.
 No installation needed:
 
 ```bash
-npx @cynco/mcp
+npx cynco-mcp
 ```
 
 ### Option 2: Install globally
 
 ```bash
-npm install -g @cynco/mcp
+npm install -g cynco-mcp
 cynco-mcp
 ```
 
@@ -68,7 +68,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "cynco-accounting": {
       "command": "npx",
-      "args": ["-y", "@cynco/mcp"],
+      "args": ["-y", "cynco-mcp"],
       "env": {
         "CYNCO_DATABASE_URL": "postgresql://user:pass@localhost:5432/cynco"
       }
@@ -87,7 +87,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "cynco-accounting": {
       "command": "npx",
-      "args": ["-y", "@cynco/mcp"],
+      "args": ["-y", "cynco-mcp"],
       "env": {
         "CYNCO_DATABASE_URL": "postgresql://user:pass@localhost:5432/cynco"
       }
@@ -108,7 +108,7 @@ Add to your project's `.mcp.json`:
     "cynco-accounting": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cynco/mcp"],
+      "args": ["-y", "cynco-mcp"],
       "env": {
         "CYNCO_DATABASE_URL": "postgresql://user:pass@localhost:5432/cynco"
       }
@@ -142,7 +142,7 @@ Add to `.cursor/mcp.json`:
   "mcpServers": {
     "cynco-accounting": {
       "command": "npx",
-      "args": ["-y", "@cynco/mcp"],
+      "args": ["-y", "cynco-mcp"],
       "env": {
         "CYNCO_DATABASE_URL": "postgresql://user:pass@localhost:5432/cynco"
       }
@@ -160,7 +160,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
   "mcpServers": {
     "cynco-accounting": {
       "command": "npx",
-      "args": ["-y", "@cynco/mcp"],
+      "args": ["-y", "cynco-mcp"],
       "env": {
         "CYNCO_DATABASE_URL": "postgresql://user:pass@localhost:5432/cynco"
       }
@@ -346,7 +346,7 @@ Authorization: Bearer cak_your_api_key_here
 **Generate a key:**
 
 ```bash
-npx @cynco/mcp generate-key \
+npx cynco-mcp generate-key \
   --name "My AI Agent" \
   --tenant-type client \
   --tenant-id client_01abc...

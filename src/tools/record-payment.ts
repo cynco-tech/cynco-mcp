@@ -71,7 +71,7 @@ export async function recordPayment(args: {
       const entityWhere = tenantWhere(tenant, 2);
       const entityResult = await client.query(
         `SELECT id FROM ${entityTable}
-         WHERE id = $1 AND ${entityWhere.sql} AND is_archived = false`,
+         WHERE id = $1 AND ${entityWhere.sql} AND is_active = true`,
         [args.entityId, ...entityWhere.params],
       );
       if (entityResult.rows.length === 0) {

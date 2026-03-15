@@ -66,7 +66,7 @@ export async function createInvoice(args: {
       const custResult = await client.query(
         `SELECT id, name, email, address, city, state, zip, country, phone
          FROM customers
-         WHERE id = $1 AND ${custTw.sql} AND is_archived = false`,
+         WHERE id = $1 AND ${custTw.sql} AND is_active = true`,
         [args.customerId, ...custTw.params],
       );
       if (custResult.rows.length === 0) {
@@ -153,7 +153,7 @@ export async function createInvoice(args: {
       const year = new Date().getFullYear();
       const pattern = `INV-${year}-%`;
 
-      const invTw = tenantWhere(tenant, 2);
+      const invTw = tenantWhere(tenant, 1);
       const maxResult = await client.query(
         `SELECT MAX(invoice_number) as max_number FROM invoices
          WHERE ${invTw.sql} AND invoice_number LIKE $${invTw.nextParam}`,

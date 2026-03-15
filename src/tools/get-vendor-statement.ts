@@ -48,7 +48,7 @@ export async function getVendorStatement(args: {
     const vendor = vendorResult.rows[0];
 
     // Get bills in date range
-    const twBill = tenantWhere(tenant, 3, "b");
+    const twBill = tenantWhere(tenant, 2, "b");
     const billResult = await query(
       `SELECT
           b.id,
@@ -75,7 +75,7 @@ export async function getVendorStatement(args: {
     );
 
     // Get payments from payments_unified for this vendor
-    const twPay = tenantWhere(tenant, 3, "pu");
+    const twPay = tenantWhere(tenant, 2, "pu");
     const paymentResult = await query(
       `SELECT
           pu.id,

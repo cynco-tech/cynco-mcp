@@ -1,5 +1,5 @@
 {
-  "name": "cynco-mcp",
+  "name": "@cynco/mcp",
   "version": "2.0.0",
   "description": "Cynco Accounting MCP Server — AI-native accounting tools via Model Context Protocol",
   "type": "module",

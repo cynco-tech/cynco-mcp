@@ -3,6 +3,19 @@ import { query } from "./db.js";
 import { log } from "./logger.js";
 import type { Tenant } from "./utils/validation.js";
 
+// Throttle last_used_at updates to at most once per 5 minutes per credential.
+// Prevents write storms under sustained MCP traffic (120 req/min = 120 UPDATEs/min → 1).
+const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
+const lastUsedCache = new Map<string, number>();
+
+// Evict stale entries from the lastUsedCache to prevent unbounded growth.
+setInterval(() => {
+  const cutoff = Date.now() - LAST_USED_THROTTLE_MS;
+  for (const [key, ts] of lastUsedCache) {
+    if (ts < cutoff) lastUsedCache.delete(key);
+  }
+}, LAST_USED_THROTTLE_MS).unref();
+
 export interface ApiKeyRecord {
   id: string;
   tenantType: "client" | "accounting_firm";
@@ -50,10 +63,14 @@ export async function resolveApiKey(rawKey: string): Promise<ApiKeyRecord | null
 
   const row = result.rows[0];
 
-  // Update last_used_at (fire-and-forget, don't block auth)
-  query("UPDATE mcp_api_keys SET last_used_at = NOW() WHERE id = $1", [row.id]).catch((err) =>
-    log.warn("Failed to update last_used_at", { keyId: row.id, error: String(err) }),
-  );
+  // Throttled last_used_at update (at most once per 5 min per key)
+  const now = Date.now();
+  const cacheKey = `api:${row.id as string}`;
+  const lastFlushed = lastUsedCache.get(cacheKey) ?? 0;
+  if (now - lastFlushed > LAST_USED_THROTTLE_MS) {
+    lastUsedCache.set(cacheKey, now);
+    query("UPDATE mcp_api_keys SET last_used_at = NOW() WHERE id = $1", [row.id]).catch(() => {});
+  }
 
   return {
     id: row.id as string,
@@ -61,6 +78,56 @@ export async function resolveApiKey(rawKey: string): Promise<ApiKeyRecord | null
     tenantId: row.tenant_id as string,
     name: row.name as string,
     scopes: (row.scopes as string[]) || [],
+  };
+}
+
+/**
+ * Look up an OAuth access token by its raw value.
+ * Returns the tenant info if valid, not revoked, and not expired; null otherwise.
+ */
+export async function resolveOAuthToken(rawToken: string): Promise<ApiKeyRecord | null> {
+  const tokenHash = hashApiKey(rawToken);
+
+  const result = await query(
+    `SELECT id, tenant_type, tenant_id, client_id, scopes
+     FROM oauth_access_tokens
+     WHERE token_hash = $1
+       AND revoked_at IS NULL
+       AND expires_at > NOW()`,
+    [tokenHash],
+  );
+
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+
+  // Throttled last_used_at update (at most once per 5 min per token)
+  const oauthNow = Date.now();
+  const oauthCacheKey = `oauth:${row.id as string}`;
+  const oauthLastFlushed = lastUsedCache.get(oauthCacheKey) ?? 0;
+  if (oauthNow - oauthLastFlushed > LAST_USED_THROTTLE_MS) {
+    lastUsedCache.set(oauthCacheKey, oauthNow);
+    query("UPDATE oauth_access_tokens SET last_used_at = NOW() WHERE id = $1", [row.id]).catch(() => {});
+  }
+
+  const scopes = (row.scopes as string[]) || [];
+
+  // OAuth tokens must have explicit scopes — reject tokens with empty scopes
+  // to prevent null/empty scopes from granting full access via checkScope()
+  if (scopes.length === 0) {
+    log.warn("OAuth token has empty scopes — rejecting to prevent full-access grant", {
+      tokenId: row.id as string,
+      clientId: row.client_id as string,
+    });
+    return null;
+  }
+
+  return {
+    id: row.id as string,
+    tenantType: row.tenant_type as "client" | "accounting_firm",
+    tenantId: row.tenant_id as string,
+    name: `OAuth (${row.client_id as string})`,
+    scopes,
   };
 }
 
@@ -89,25 +156,71 @@ export function apiKeyToTenant(record: ApiKeyRecord): Tenant {
  *
  * Scope rules:
  * - Empty scopes array = full access (backwards compatible with existing keys)
- * - "read" = read-only tools
- * - "write" = write tools (implies read)
+ * - Legacy "read" matches any module:read scope
+ * - Legacy "write" matches any module:write scope (and implies read)
+ * - Module-level scopes: "accounting:read", "invoicing:write", etc.
+ * - Module write implies module read (e.g. "accounting:write" grants "accounting:read")
  * - "query:execute" = execute_query tool (dangerous, explicit opt-in)
  */
-export type ToolScope = "read" | "write" | "query:execute";
+export type ModuleScope =
+  | "accounting:read" | "accounting:write"
+  | "invoicing:read" | "invoicing:write"
+  | "customers:read" | "customers:write"
+  | "vendors:read" | "vendors:write"
+  | "reports:read"
+  | "dataroom:read" | "dataroom:write"
+  | "agreements:read" | "agreements:write"
+  | "assets:read" | "assets:write"
+  | "admin:read" | "admin:write"
+  | "tags:read" | "tags:write";
+
+export type ToolScope = "read" | "write" | "query:execute" | "code:execute" | ModuleScope;
+
+export const ALL_MODULE_SCOPES: ModuleScope[] = [
+  "accounting:read", "accounting:write",
+  "invoicing:read", "invoicing:write",
+  "customers:read", "customers:write",
+  "vendors:read", "vendors:write",
+  "reports:read",
+  "dataroom:read", "dataroom:write",
+  "agreements:read", "agreements:write",
+  "assets:read", "assets:write",
+  "admin:read", "admin:write",
+  "tags:read", "tags:write",
+];
 
 export function checkScope(record: ApiKeyRecord, required: ToolScope): boolean {
   // Empty scopes = unrestricted (backwards compat for keys created before scopes)
   if (record.scopes.length === 0) return true;
 
-  if (required === "read") {
-    return record.scopes.some((s) => s === "read" || s === "write");
+  const scopes = record.scopes;
+
+  // Direct match
+  if (scopes.includes(required)) return true;
+
+  // Legacy coarse-grained scope mapping
+  if (required === "read" || required.endsWith(":read")) {
+    // Legacy "read" grants any read scope; legacy "write" also grants read
+    if (scopes.includes("read") || scopes.includes("write")) return true;
   }
-  if (required === "write") {
-    return record.scopes.includes("write");
+  if (required === "write" || required.endsWith(":write")) {
+    if (scopes.includes("write")) return true;
   }
+
+  // Module write implies module read (e.g., "accounting:write" grants "accounting:read")
+  if (required.endsWith(":read")) {
+    const module = required.replace(":read", ":write");
+    if (scopes.includes(module)) return true;
+  }
+
+  // query:execute and code:execute require explicit opt-in
   if (required === "query:execute") {
-    return record.scopes.includes("query:execute");
+    return scopes.includes("query:execute");
   }
+  if (required === "code:execute") {
+    return scopes.includes("code:execute");
+  }
+
   return false;
 }
 

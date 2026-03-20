@@ -81,10 +81,11 @@ export async function updateInvoiceStatus(args: {
         );
       }
 
-      // Update the invoice status
+      // Update the invoice status (tenant filter for defense-in-depth)
+      const updTw = tenantWhere(tenant, 3);
       await client.query(
-        `UPDATE invoices SET status = $1, updated_at = NOW() WHERE id = $2`,
-        [args.status, args.invoiceId],
+        `UPDATE invoices SET status = $1, updated_at = NOW() WHERE id = $2 AND ${updTw.sql}`,
+        [args.status, args.invoiceId, ...updTw.params],
       );
 
       return successResponse({

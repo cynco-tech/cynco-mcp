@@ -50,6 +50,27 @@ export async function withTransaction<T>(
   }
 }
 
+/**
+ * Execute a function within a transaction that always rolls back.
+ * Useful for dry-run validation — runs all the logic but commits nothing.
+ */
+export async function withDryRun<T>(
+  fn: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("ROLLBACK");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export interface PoolStats {
   total: number;
   idle: number;

@@ -9,9 +9,10 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { healthCheck, shutdown, getPoolStats } from "./db.js";
 import { createServer } from "./server.js";
-import { extractBearerToken, resolveApiKey, apiKeyToTenant } from "./auth.js";
+import { extractBearerToken, resolveApiKey, resolveOAuthToken, apiKeyToTenant } from "./auth.js";
 import type { ApiKeyRecord } from "./auth.js";
 import { log, withRequestId } from "./logger.js";
+import { ALL_MODULE_SCOPES } from "./auth.js";
 import type { Tenant } from "./utils/validation.js";
 import {
   serializeMetrics,
@@ -103,7 +104,10 @@ async function authenticate(req: IncomingMessage): Promise<{ tenant: Tenant; rec
   const token = extractBearerToken(req.headers.authorization);
   if (!token) return null;
 
-  const record = await resolveApiKey(token);
+  // Try API key first if it has the cak_ prefix, otherwise try OAuth token
+  const record = token.startsWith("cak_")
+    ? await resolveApiKey(token)
+    : await resolveOAuthToken(token);
   if (!record) return null;
 
   return { tenant: apiKeyToTenant(record), record };
@@ -132,6 +136,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const path = url.pathname;
 
+  // ── CORS (only for /mcp endpoint and OPTIONS preflight) ──
+  if (path === "/mcp" || req.method === "OPTIONS") {
+    const origin = req.headers.origin;
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id");
+      res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, X-Request-Id, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After");
+      res.setHeader("Access-Control-Max-Age", "86400");
+    }
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+  }
+
   // ── Health check ──
   if (path === "/health" && req.method === "GET") {
     try {
@@ -141,7 +162,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       const poolUtilization = pool.total > 0 ? (pool.total - pool.idle) / pool.total : 0;
       const status = poolUtilization > 0.8 ? "degraded" : "ok";
 
-      sendJson(res, status === "ok" ? 200 : 200, {
+      sendJson(res, status === "ok" ? 200 : 503, {
         status,
         version: VERSION,
         transport: "http",
@@ -189,6 +210,28 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     } else {
       sendJson(res, 404, { error: "Icon not found" });
     }
+    return;
+  }
+
+  // ── OAuth Protected Resource Metadata (RFC 9728) ──
+  if (path === "/.well-known/oauth-protected-resource" && req.method === "GET") {
+    const resource = process.env.MCP_RESOURCE_URL;
+    if (!resource) {
+      sendJson(res, 500, {
+        error: "MCP_RESOURCE_URL environment variable is not configured",
+      }, requestId);
+      return;
+    }
+    const issuer = process.env.MCP_ISSUER_URL || "https://app.cynco.io";
+
+    sendJson(res, 200, {
+      resource,
+      authorization_servers: [issuer],
+      scopes_supported: ["read", "write", "query:execute", "code:execute", ...ALL_MODULE_SCOPES],
+      bearer_methods_supported: ["header"],
+      resource_name: "Cynco Accounting MCP Server",
+      resource_documentation: "https://github.com/cynco-tech/cynco-mcp",
+    }, requestId);
     return;
   }
 

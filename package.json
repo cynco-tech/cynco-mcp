@@ -4,6 +4,23 @@
   "description": "Cynco Accounting MCP Server — AI-native accounting tools via Model Context Protocol",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://github.com/cynco-tech/cynco-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynco-tech/cynco-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cynco-tech/cynco-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "accounting",
+    "invoicing",
+    "ai",
+    "claude",
+    "cynco"
+  ],
   "bin": {
     "cynco-mcp": "dist/index.js"
   },

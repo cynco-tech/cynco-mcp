@@ -65,7 +65,7 @@ describe("errorResponse masking", () => {
     const errorResponse = await getErrorResponse("production");
     const result = errorResponse("Exactly one of clientId or accountingFirmId must be provided (XOR).");
     const text = JSON.parse(result.content[0].text);
-    expect(text.error).toBe("Exactly one of clientId or accountingFirmId must be provided (XOR).");
+    expect(text.error).toContain("Exactly one of clientId or accountingFirmId must be provided (XOR).");
   });
 
   it("passes through scope errors in production", async () => {

@@ -13,7 +13,7 @@
 
   <br />
 
-  52 tools &middot; 4 guided prompts &middot; 3 reference guides
+  107 tools &middot; 9 guided prompts &middot; 4 reference guides &middot; Code Mode
 
   <br />
   <br />
@@ -26,8 +26,10 @@ You (AI Agent)  ──►  @cynco/mcp  ──►  Your Cynco Account
     Claude               │              Chart of Accounts
     Cursor               │              Invoices & Bills
     Windsurf             │              Bank Transactions
-    Any MCP client       │              Financial Statements
-                         │              Payments & More
+    Any MCP client       │              Financial Reports
+                         │              Agreements & Contracts
+                         │              Fixed Assets
+                         │              Data Room & More
                          │
                     Tenant-scoped
                     Your data only
@@ -52,6 +54,13 @@ Your key looks like `cak_abc123...` — save it securely, it's shown once.
 
 Pick your client and paste the config:
 
+#### Claude Code
+
+```bash
+claude mcp add cynco --transport streamable-http https://mcp.cynco.io/mcp \
+  --header "Authorization: Bearer cak_your_api_key_here"
+```
+
 #### Claude Desktop
 
 Add to your config file:
@@ -71,13 +80,6 @@ Add to your config file:
     }
   }
 }
-```
-
-#### Claude Code
-
-```bash
-claude mcp add cynco --transport streamable-http https://mcp.cynco.io/mcp \
-  --header "Authorization: Bearer cak_your_api_key_here"
 ```
 
 #### Cursor
@@ -126,12 +128,15 @@ Once connected, your AI agent can:
 - *"Categorize all the GRAB transactions as transport expense"*
 - *"Run the month-end close for February"*
 - *"What's our cash flow trend over the last 6 months?"*
+- *"Review the fixed asset register and flag fully depreciated items"*
+- *"Create an MSA with Company X using our standard template"*
+- *"Organize the data room — find orphaned files and suggest folders"*
 
 <br />
 
 ## What your AI can do
 
-**52 tools** across 14 domains:
+**107 tools** across 15 modules — everything from chart of accounts to contract management.
 
 ### Orientation
 
@@ -146,6 +151,8 @@ Once connected, your AI agent can:
 |------|-------------|
 | `get_chart_of_accounts` | Full COA with codes, types, hierarchy, AI mapping hints |
 | `search_accounts` | Fuzzy search by name, code, or description |
+| `create_account` | Create a new account with code, type, and parent |
+| `update_account` | Update account name, description, or status |
 | `get_account_balances` | Period-based balance snapshots with YTD totals |
 | `get_account_activity` | Sub-ledger for a single account — every posting with running balance |
 
@@ -190,17 +197,12 @@ Once connected, your AI agent can:
 | `create_journal_entry_template` | Create template for rent, depreciation, payroll accruals |
 | `apply_journal_entry_template` | Execute a template for a specific date |
 
-### General Ledger & Trial Balance
+### General Ledger & Reports
 
 | Tool | Description |
 |------|-------------|
 | `get_general_ledger` | GL postings with running balances and JE references |
 | `get_trial_balance` | TB snapshots — preliminary, adjusted, or final |
-
-### Financial Statements
-
-| Tool | Description |
-|------|-------------|
 | `get_income_statement` | Profit & Loss — revenue, expenses, net income by period |
 | `get_balance_sheet` | Assets, liabilities, equity with A = L + E balance check |
 | `get_cash_flow_summary` | Monthly inflows, outflows, net cash flow from bank data |
@@ -210,11 +212,14 @@ Once connected, your AI agent can:
 | Tool | Description |
 |------|-------------|
 | `get_customers` | Customer list with outstanding balances and payment terms |
+| `create_customer` | Create a new customer with contact and payment details |
+| `update_customer` | Update customer details — name, email, terms, address |
+| `delete_customer` | Soft-delete a customer (deactivate) |
 | `get_customer_statement` | Full statement of account — invoices, payments, credits |
 | `get_customer_aging` | AR aging by customer (current, 1-30, 31-60, 61-90, 90+ days) |
 | `get_invoice_aging_detail` | Invoice-level aging with days past due |
 
-### Invoices
+### Invoices & Billing
 
 | Tool | Description |
 |------|-------------|
@@ -222,31 +227,52 @@ Once connected, your AI agent can:
 | `create_invoice` | Create invoice with auto-generated number (INV-YYYY-NNNN) |
 | `update_invoice_status` | Finalize, mark as paid, or void an invoice |
 | `get_credit_debit_notes` | Credit/debit notes with applications and refund status |
+| `create_credit_debit_note` | Issue a credit or debit note against an invoice |
+| `get_quotations` | Quotes with conversion tracking (accepted → invoice) |
+| `create_quotation` | Create a draft quotation for a customer |
+| `update_quotation_status` | Send, accept, reject, or convert a quotation |
+| `get_recurring_invoices` | Recurring invoice templates and schedules |
+| `create_recurring_invoice` | Set up automatic invoice generation |
+| `update_recurring_invoice` | Modify frequency, amount, or next run date |
+| `delete_recurring_invoice` | Remove a recurring invoice template |
+| `get_items` | Product/service items with pricing and tax settings |
+| `create_item` | Create a new product or service item |
+| `update_item` | Update item details — name, price, tax rate |
+| `delete_item` | Soft-delete an item |
 
 ### Vendors & Accounts Payable
 
 | Tool | Description |
 |------|-------------|
 | `get_vendors` | Vendor list with outstanding bill counts and balances |
+| `create_vendor` | Create a new vendor with contact and payment details |
+| `update_vendor` | Update vendor details — name, email, terms, bank info |
+| `delete_vendor` | Soft-delete a vendor (deactivate) |
 | `get_vendor_statement` | Full vendor statement — bills, payments, outstanding amounts |
 | `get_vendor_aging` | AP aging by vendor (current, 1-30, 31-60, 61-90, 90+ days) |
 | `get_bills` | Bills with paid/outstanding amounts and line items |
+| `create_bill` | Create a new bill from a vendor |
+| `update_bill_status` | Approve, mark as paid, or void a bill |
 | `get_purchase_orders` | POs with vendor details and approval status |
+| `create_purchase_order` | Create a purchase order for a vendor |
+| `update_purchase_order_status` | Approve, receive, or close a purchase order |
 
 ### Payments
 
 | Tool | Description |
 |------|-------------|
 | `get_payments` | All payments — inbound (customers) and outbound (vendors) |
-| `record_payment` | Record a payment — auto-updates linked invoice status |
+| `record_payment` | Record a payment — auto-updates linked invoice/bill status |
 
-### Quotations & Recurring
+### Tags
 
 | Tool | Description |
 |------|-------------|
-| `get_quotations` | Quotes with conversion tracking (accepted → invoice) |
-| `get_recurring_invoices` | Recurring invoice templates and schedules |
 | `get_tags` | Tags with usage counts across entities |
+| `create_tag` | Create a new tag for categorization |
+| `update_tag` | Update tag name or color |
+| `delete_tag` | Remove a tag |
+| `assign_tag` | Assign a tag to any entity (invoice, bill, JE, etc.) |
 
 ### Period Management & Reconciliation
 
@@ -258,12 +284,98 @@ Once connected, your AI agent can:
 | `get_reconciliation_status` | Reconciled vs unreconciled GL entries per account |
 | `reconcile_accounts` | Mark GL entries as reconciled (max 100/call) |
 
-### Code Mode (Advanced)
+### Agreements & Contracts
+
+| Tool | Description |
+|------|-------------|
+| `get_agreements` | List agreements with status, counterparty, and value |
+| `get_agreement_detail` | Full agreement with clauses, signers, and timeline |
+| `create_agreement` | Create from template or scratch — NDA, MSA, SOW, engagement letter |
+| `update_agreement_status` | Move through lifecycle: draft → sent → signing → executed |
+| `get_clauses` | Browse the clause library for reuse |
+| `get_contract_templates` | Available templates by agreement type |
+| `get_billing_schedules` | Billing milestones linked to agreements |
+| `create_billing_schedule` | Set up milestone-based or recurring billing |
+
+### Data Room
+
+| Tool | Description |
+|------|-------------|
+| `get_dataroom_folders` | Folder structure and hierarchy |
+| `get_dataroom_files` | Files with metadata, sizes, and upload dates |
+| `get_dataroom_file_detail` | Detailed file info — versions, access log, linked entities |
+| `search_dataroom` | Search files by name, description, or content |
+| `get_dataroom_activity` | Activity log — uploads, downloads, access events |
+| `create_dataroom_folder` | Create a new folder in the data room |
+
+### Fixed Assets
+
+| Tool | Description |
+|------|-------------|
+| `get_fixed_assets` | Asset register with cost, book value, and depreciation |
+| `get_asset_detail` | Full asset details — purchase, depreciation, maintenance |
+| `create_fixed_asset` | Register a new fixed asset |
+| `update_asset_status` | Activate, dispose, or mark for sale |
+| `get_asset_categories` | Asset categories with depreciation methods and rates |
+| `get_depreciation_schedule` | Depreciation entries by period |
+| `get_asset_summary` | Summary by category — total cost, NBV, depreciation |
+
+### Admin & Audit
+
+| Tool | Description |
+|------|-------------|
+| `get_team_members` | Team members with roles and permissions |
+| `get_staff_invitations` | Pending staff invitations |
+| `get_organization_link_requests` | Pending org link requests (accounting firm ↔ client) |
+| `get_audit_trail` | Full audit log — who changed what, when |
+| `get_entity_history` | Version history for a specific entity |
+| `get_einvoice_status` | E-invoice submission status and LHDN compliance |
+
+### Code Mode
+
+| Tool | Description |
+|------|-------------|
+| `search_tools` | Discover tools by keyword — returns TypeScript type signatures |
+| `execute_code` | Run JavaScript in a sandbox — call multiple tools in one round-trip |
+
+### SQL Mode
 
 | Tool | Description |
 |------|-------------|
 | `search_schema` | Discover tables, columns, types, and foreign keys |
 | `execute_query` | Read-only SQL SELECT with auto tenant scoping (max 200 rows) |
+
+<br />
+
+## Code Mode
+
+Code Mode lets your AI call multiple tools in a single round-trip — saving **~90% in token overhead** for complex workflows.
+
+Instead of the LLM making 6 individual tool calls (~15K tokens of tool definitions per call), it writes one script:
+
+```javascript
+const profile = await cynco.get_company_profile({});
+const summary = await cynco.get_financial_summary({});
+const bs = await cynco.get_balance_sheet({});
+const aging = await cynco.get_customer_aging({});
+
+console.log({
+  company: profile.data.name,
+  revenue: summary.data.totalRevenue,
+  assets: bs.data.totalAssets,
+  overdue: aging.data.totalOverdue,
+});
+```
+
+**How it works:**
+1. `search_tools({ query: "invoices" })` — discover tools, get TypeScript type signatures
+2. `execute_code({ code: "..." })` — run the script, all `cynco.*` calls execute server-side
+
+**Security:** Scripts run in a `node:vm` sandbox — no `process`, `require`, `import`, `fetch`, or `eval`.
+**Limits:** 60s timeout, 50 tool calls per script, 10KB script, 50KB output.
+**Auth:** Each `cynco.*` call enforces the same scopes as direct tool calls.
+
+Requires `code:execute` scope on the API key.
 
 <br />
 
@@ -277,18 +389,38 @@ Multi-step workflows that walk your AI through complex tasks:
 | `categorize_transactions` | Review uncategorized transactions → suggest accounts → create rules |
 | `financial_health_check` | Liquidity, profitability, AR/AP, cash flow analysis, red flags |
 | `reconcile_bank_account` | Match GL entries to bank statement → mark reconciled → report |
+| `code_mode_intro` | Learn how to use Code Mode for efficient multi-step workflows |
+| `create_agreement` | Guided agreement creation — template, terms, signers, billing |
+| `asset_register_review` | Review fixed assets, depreciation, disposals, and anomalies |
+| `vendor_payment_run` | AP aging → prioritize payments → record batch → summary |
+| `data_room_organize` | Audit folder structure → find orphans/dupes → reorganize |
 
 <br />
 
 ## API Key Scopes
 
-Your API key controls what the AI can do:
+Control exactly what your AI agent can access with granular, module-level scopes:
 
 | Scope | Access |
 |-------|--------|
-| `read` | View data — reports, balances, statements, lists |
-| `write` | Read + create/update — invoices, entries, payments, categorization |
-| `query:execute` | Code Mode — direct SQL queries (opt-in, for power users) |
+| `accounting:read` | COA, bank transactions, journal entries, GL, periods, reconciliation |
+| `accounting:write` | Create/update above *(implies `accounting:read`)* |
+| `invoicing:read` | Invoices, quotations, recurring invoices, items, credit/debit notes |
+| `invoicing:write` | Create/update above *(implies `invoicing:read`)* |
+| `customers:read` | Customer list, statements, aging |
+| `customers:write` | Create/update/delete customers *(implies `customers:read`)* |
+| `vendors:read` | Vendors, bills, purchase orders, vendor aging |
+| `vendors:write` | Create/update/delete above *(implies `vendors:read`)* |
+| `reports:read` | Financial summary, trial balance, income statement, balance sheet, cash flow |
+| `tags:read` / `tags:write` | Tag management |
+| `agreements:read` / `agreements:write` | Agreements, clauses, templates, billing schedules |
+| `dataroom:read` / `dataroom:write` | Data room folders, files, search, activity |
+| `assets:read` / `assets:write` | Fixed assets, categories, depreciation |
+| `admin:read` | Team, invitations, audit trail, e-invoice status |
+| `query:execute` | SQL Mode — raw read-only SQL *(explicit opt-in)* |
+| `code:execute` | Code Mode — sandboxed script execution *(explicit opt-in)* |
+
+**Legacy scopes:** `read` grants all `:read` scopes. `write` grants all `:write` scopes. Empty scopes = full access (backwards compatible with existing keys).
 
 > [!IMPORTANT]
 > Your AI agent can only access **your organization's data**. Every query is scoped to your tenant via database-level isolation. There is no way to access another organization's data.
@@ -301,10 +433,13 @@ Your API key controls what the AI can do:
 |---------|--------|
 | **Tenant isolation** | Every query filtered by your organization via SQL CHECK constraints |
 | **Rate limiting** | 120 requests/minute per organization |
-| **Scope enforcement** | API keys restricted to read, write, or query access |
-| **SQL safety** | Code Mode blocks writes, CTEs, UNION, OR — whitelist only |
+| **Scope enforcement** | API keys restricted to specific modules — read, write, or execute |
+| **API key hashing** | Keys stored as SHA-256 hashes — raw key shown once on creation |
+| **SQL safety** | SQL Mode blocks writes, CTEs, UNION, OR — whitelist only |
+| **Code sandbox** | Code Mode runs in `node:vm` — no filesystem, network, or process access |
 | **Session binding** | Sessions locked to your tenant, auto-expire after 1 hour |
 | **Error masking** | Internal errors hidden — correlation IDs returned for support |
+| **OAuth support** | RFC 9728 protected resource metadata for OAuth integrations |
 
 <br />
 
@@ -340,7 +475,9 @@ docker run -p 3100:3100 \
 | `MCP_RATE_LIMIT` | | `120` | Requests/minute per tenant |
 | `MCP_DB_POOL_MAX` | | `5` | Max DB pool connections |
 | `MCP_DB_POOL_IDLE_TIMEOUT` | | `30000` | Idle connection timeout (ms) |
-| `MCP_PUBLIC_URL` | | — | Public URL for resources |
+| `MCP_TOOL_TIMEOUT_MS` | | `30000` | Individual tool execution timeout (ms) |
+| `MCP_CODE_TIMEOUT_MS` | | `60000` | Code Mode script timeout (ms) |
+| `MCP_PUBLIC_URL` | | — | Public URL for resource URIs |
 | `LOG_LEVEL` | | `info` | `debug` · `info` · `warn` · `error` |
 
 </details>
@@ -350,14 +487,16 @@ docker run -p 3100:3100 \
 
 <br />
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/mcp` | `POST` | MCP requests (initialize or tool calls) |
-| `/mcp` | `GET` | SSE stream for notifications |
-| `/mcp` | `DELETE` | Terminate session |
-| `/health` | `GET` | Liveness probe with DB pool stats |
-| `/ready` | `GET` | Readiness probe |
-| `/metrics` | `GET` | Prometheus metrics |
+| Endpoint | Method | Auth | Description |
+|----------|--------|:----:|-------------|
+| `/mcp` | `POST` | Yes | MCP requests (initialize or tool calls) |
+| `/mcp` | `GET` | Yes | SSE stream for server-sent notifications |
+| `/mcp` | `DELETE` | Yes | Terminate session |
+| `/health` | `GET` | No | Liveness probe with DB pool stats |
+| `/ready` | `GET` | No | Readiness probe |
+| `/metrics` | `GET` | No | Prometheus metrics |
+| `/icon.png` | `GET` | No | Server icon |
+| `/.well-known/oauth-protected-resource` | `GET` | No | RFC 9728 OAuth metadata |
 
 </details>
 
@@ -371,9 +510,46 @@ docker run -p 3100:3100 \
 | `mcp_requests_total` | Counter | Tool executions by name and status |
 | `mcp_request_duration_seconds` | Histogram | Tool execution latency |
 | `mcp_rate_limit_hits_total` | Counter | Rate limit violations |
-| `mcp_auth_failures_total` | Counter | Auth failures |
-| `mcp_db_pool_connections` | Gauge | DB pool stats |
+| `mcp_auth_failures_total` | Counter | Auth failures by reason |
+| `mcp_db_pool_connections` | Gauge | DB pool stats (total, idle, waiting) |
 | `mcp_active_sessions` | Gauge | Active HTTP sessions |
+
+</details>
+
+<details>
+<summary><strong>Development</strong></summary>
+
+<br />
+
+```bash
+pnpm install
+pnpm dev              # stdio mode
+pnpm dev:http         # HTTP mode on :3100
+pnpm test             # Unit tests (296 tests)
+pnpm test:integration # Integration tests (requires PostgreSQL)
+pnpm typecheck        # Type check
+pnpm build            # Build to dist/
+```
+
+### Project structure
+
+```
+src/
+├── index.ts           # Entry point — stdio/HTTP transports, sessions, rate limiting
+├── server.ts          # Tool registration (107 tools, prompts, resources)
+├── auth.ts            # API key + OAuth resolution, scope checking
+├── scope-map.ts       # Tool → scope mappings
+├── db.ts              # PostgreSQL pool, transactions, health checks
+├── logger.ts          # Structured JSON logging
+├── metrics.ts         # Prometheus counters, histograms, gauges
+├── prompts.ts         # 9 guided workflow prompts
+├── resources.ts       # 4 reference resources
+├── output-schemas.ts  # Zod output validation schemas
+├── tools/             # 105 tool implementations (one file per tool)
+├── code-mode/         # Code Mode: sandbox, type generator, search, execute
+├── utils/             # Validation, cursors, errors, TypeID
+└── cli/               # API key generation CLI
+```
 
 </details>
 
@@ -394,5 +570,5 @@ Found a bug or want a new tool? [Open an issue](https://github.com/cynco-tech/cy
     <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
     <img src="https://img.shields.io/badge/MCP-191919?style=for-the-badge&logo=anthropic&logoColor=white" alt="MCP" />
   </p>
-  <p><sub>Built by <a href="https://cynco.io">Cynco</a> — AI Native Accounting</sub></p>
+  <p><sub>Built by <a href="https://cynco.io">Cynco</a> — AI-native accounting for every business</sub></p>
 </div>

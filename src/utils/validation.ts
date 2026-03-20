@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { enrichError } from "./errors.js";
 
 export interface TenantArgs {
   clientId?: string;
@@ -80,14 +81,17 @@ export function tenantWhere(
 }
 
 export function successResponse(data: unknown): CallToolResult {
+  const payload = { success: true, data };
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify({ success: true, data }, null, 2),
+        text: JSON.stringify(payload),
+        annotations: { audience: ["user", "assistant"] as const },
       },
     ],
-  };
+    structuredContent: payload,
+  } as CallToolResult;
 }
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -105,7 +109,7 @@ export function errorResponse(
   const safeMessage =
     isProduction && isInternalError(message)
       ? `Internal error${requestId ? ` (ref: ${requestId})` : ""}. Contact support if this persists.`
-      : message;
+      : enrichError(message);
 
   const body: Record<string, unknown> = { success: false, error: safeMessage };
   if (!isProduction && details) body.details = details;
@@ -115,11 +119,13 @@ export function errorResponse(
     content: [
       {
         type: "text",
-        text: JSON.stringify(body, null, 2),
+        text: JSON.stringify(body),
+        annotations: { audience: ["assistant"] as const },
       },
     ],
+    structuredContent: body,
     isError: true,
-  };
+  } as CallToolResult;
 }
 
 /**

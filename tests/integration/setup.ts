@@ -94,8 +94,24 @@ export async function seedTestData(): Promise<void> {
 }
 
 export async function cleanupTestData(): Promise<void> {
-    // Delete in reverse dependency order
+    // Delete in reverse dependency order — new entities first, then originals
     const tables = [
+        "entity_tags",
+        "tags",
+        "billing_schedule_milestones",
+        "billing_schedules",
+        "agreement_signers",
+        "agreements",
+        "credit_debit_notes",
+        "recurring_invoice_templates",
+        "invoices",
+        "quotations",
+        "bill_payments",
+        "bills",
+        "purchase_orders",
+        "items",
+        "customers",
+        "vendors",
         "general_ledger",
         "journal_entry_lines",
         "journal_entries",

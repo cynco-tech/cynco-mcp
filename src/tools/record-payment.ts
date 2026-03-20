@@ -99,6 +99,12 @@ export async function recordPayment(args: {
             "Invoice does not belong to the specified customer.",
           );
         }
+        const invStatus = invResult.rows[0].status as string;
+        if (invStatus === "void" || invStatus === "draft") {
+          return errorResponse(
+            `Cannot record payment against a ${invStatus} invoice. Finalize or un-void it first.`,
+          );
+        }
       }
 
       // If billId provided, verify it belongs to tenant and the vendor matches
@@ -186,11 +192,12 @@ export async function recordPayment(args: {
             newStatus = "partially_paid";
           }
 
+          const updTw = tenantWhere(tenant, 4);
           await client.query(
             `UPDATE invoices
              SET paid_amount = $1, status = $2, updated_at = NOW()
-             WHERE id = $3`,
-            [newPaid, newStatus, args.invoiceId],
+             WHERE id = $3 AND ${updTw.sql}`,
+            [newPaid, newStatus, args.invoiceId, ...updTw.params],
           );
         }
       }

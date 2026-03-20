@@ -136,4 +136,162 @@ export function registerPrompts(server: McpServer): void {
       },
     }],
   }));
+
+  // ── Code Mode ────────────────────────────────────────────────
+
+  server.registerPrompt("code_mode_intro", {
+    title: "Code Mode Introduction",
+    description: "Learn how to use Code Mode — call multiple tools in a single script for ~90% token savings.",
+  }, async () => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: [
+          "Explain how to use Code Mode for efficient multi-step workflows.",
+          "",
+          "Code Mode lets you call multiple tools in a single round-trip using JavaScript:",
+          "",
+          "1. **Discover tools:** Call search_tools with a query to find relevant tools and get TypeScript signatures",
+          "2. **Write a script:** Use `await cynco.<tool_name>(args)` to call tools and `console.log()` for output",
+          "3. **Execute:** Call execute_code with your script — all tool calls run in one round-trip",
+          "",
+          "Example workflow — financial health check in one script:",
+          "```javascript",
+          "const profile = await cynco.get_company_profile({});",
+          "const summary = await cynco.get_financial_summary({});",
+          "const bs = await cynco.get_balance_sheet({});",
+          "const is = await cynco.get_income_statement({});",
+          "const arAging = await cynco.get_customer_aging({});",
+          "const apAging = await cynco.get_vendor_aging({});",
+          "console.log({ profile: profile.data, summary: summary.data,",
+          "  balanceSheet: bs.data, incomeStatement: is.data,",
+          "  arAging: arAging.data, apAging: apAging.data });",
+          "```",
+          "",
+          "This replaces 6 individual tool calls with 1, saving ~90% in token overhead.",
+          "",
+          "Limits: 60s timeout, 50 tool calls, 10KB script, 50KB output.",
+          "Security: Scripts run in a sandbox — no process, require, import, or fetch.",
+          "Auth: Each cynco.* call goes through the same scope checks as direct tool calls.",
+        ].join("\n"),
+      },
+    }],
+  }));
+
+  // ── Phase 5 prompts ─────────────────────────────────────────
+
+  server.registerPrompt("create_agreement", {
+    title: "Create Agreement",
+    description: "Guided agreement creation — walks through template selection, counterparty details, terms, and signers.",
+    argsSchema: {
+      counterpartyName: z.string().describe("Name of the other party"),
+      agreementType: z.enum(["contract", "proposal", "engagement_letter", "nda", "msa", "sow"]).optional().describe("Type of agreement"),
+    },
+  }, async ({ counterpartyName, agreementType }) => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: [
+          `Help me create an agreement with ${counterpartyName}${agreementType ? ` (type: ${agreementType})` : ""}.`,
+          "",
+          "1. Call get_contract_templates to show available templates" + (agreementType ? ` filtered to type '${agreementType}'` : ""),
+          "2. Ask which template to use (or start from scratch)",
+          "3. Call get_clauses to show the clause library",
+          "4. Ask about key terms: effective date, expiration, auto-renewal",
+          "5. Check if the counterparty is an existing customer or vendor:",
+          "   - Call get_customers and get_vendors to search",
+          "6. Call create_agreement with all gathered details",
+          "7. Ask if a billing schedule should be created",
+          "   - If yes, call create_billing_schedule with milestones",
+          "",
+          "Present each step clearly and confirm before proceeding.",
+        ].join("\n"),
+      },
+    }],
+  }));
+
+  server.registerPrompt("asset_register_review", {
+    title: "Asset Register Review",
+    description: "Review fixed asset register, check depreciation, and identify issues.",
+  }, async () => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: [
+          "Perform a comprehensive review of the fixed asset register.",
+          "",
+          "1. Call get_asset_summary for an overview by category and status",
+          "2. Call get_asset_categories to understand the category structure",
+          "3. Call get_fixed_assets to list all active assets",
+          "4. For any fully depreciated assets still marked active, flag them",
+          "5. Call get_depreciation_schedule for the current period",
+          "6. Check for:",
+          "   - Assets without depreciation schedules",
+          "   - Unusual residual values (> 50% of cost)",
+          "   - Overdue disposals (assets held_for_sale for > 6 months)",
+          "7. Present a summary report with recommendations",
+        ].join("\n"),
+      },
+    }],
+  }));
+
+  server.registerPrompt("vendor_payment_run", {
+    title: "Vendor Payment Run",
+    description: "Review AP, prioritize vendor payments, and record a batch.",
+  }, async () => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: [
+          "Help me plan and execute a vendor payment run.",
+          "",
+          "1. Call get_vendor_aging for the AP aging overview",
+          "2. Call get_bills with status 'awaiting_payment' or 'overdue'",
+          "3. Prioritize payments:",
+          "   a. Critically overdue (90+ days) — must pay",
+          "   b. Overdue (30-90 days) — should pay",
+          "   c. Due this week — plan to pay",
+          "   d. Future due — defer",
+          "4. Present a payment plan table with vendor, amount, priority, and reason",
+          "5. After approval, for each payment:",
+          "   - Call record_payment for the vendor",
+          "   - Call update_bill_status to mark as paid",
+          "6. Present a summary of all payments made",
+        ].join("\n"),
+      },
+    }],
+  }));
+
+  server.registerPrompt("data_room_organize", {
+    title: "Organize Data Room",
+    description: "Review data room contents and suggest organization improvements.",
+  }, async () => ({
+    messages: [{
+      role: "user",
+      content: {
+        type: "text",
+        text: [
+          "Help me organize and review the data room.",
+          "",
+          "1. Call get_dataroom_folders to see the current structure",
+          "2. Call get_dataroom_files (no folder filter) to see all files",
+          "3. Identify issues:",
+          "   - Files in the root without a folder",
+          "   - Folders with no files (empty folders)",
+          "   - Duplicate file names across folders",
+          "   - Files without descriptions",
+          "4. Suggest a folder structure based on the files found",
+          "   - Typical structure: Financial Statements, Tax, Contracts, Invoices, Bank Statements, Corporate",
+          "5. If the user approves the new structure:",
+          "   - Call create_dataroom_folder for each new folder",
+          "6. Call get_dataroom_activity to check recent changes",
+          "7. Present a summary of the data room health",
+        ].join("\n"),
+      },
+    }],
+  }));
 }

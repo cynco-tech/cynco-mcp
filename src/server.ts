@@ -7,7 +7,25 @@ import { registerResources } from "./resources.js";
 import { log } from "./logger.js";
 import type { ApiKeyRecord, ToolScope } from "./auth.js";
 import { checkScope } from "./auth.js";
+import { getToolScope } from "./scope-map.js";
 import { recordToolExecution } from "./metrics.js";
+import {
+  companyProfileOutputSchema,
+  financialSummaryOutputSchema,
+  chartOfAccountsOutputSchema,
+  customersOutputSchema,
+  vendorsOutputSchema,
+  invoicesOutputSchema,
+  bankTransactionsOutputSchema,
+  journalEntriesOutputSchema,
+  trialBalanceOutputSchema,
+  incomeStatementOutputSchema,
+  balanceSheetOutputSchema,
+  accountBalancesOutputSchema,
+  searchAccountsOutputSchema,
+  createInvoiceOutputSchema,
+  cashFlowSummaryOutputSchema,
+} from "./output-schemas.js";
 
 // ── Existing tools ──────────────────────────────────────────────
 import { getChartOfAccountsSchema, getChartOfAccounts } from "./tools/get-chart-of-accounts.js";
@@ -65,8 +83,74 @@ import { getQuotationsSchema, getQuotations } from "./tools/get-quotations.js";
 import { getRecurringInvoicesSchema, getRecurringInvoices } from "./tools/get-recurring-invoices.js";
 import { getTagsSchema, getTags } from "./tools/get-tags.js";
 
+// ── Phase 3: CRUD tools ─────────────────────────────────────────
+import { createCustomerSchema, createCustomer } from "./tools/create-customer.js";
+import { updateCustomerSchema, updateCustomer } from "./tools/update-customer.js";
+import { deleteCustomerSchema, deleteCustomer } from "./tools/delete-customer.js";
+import { createVendorSchema, createVendor } from "./tools/create-vendor.js";
+import { updateVendorSchema, updateVendor } from "./tools/update-vendor.js";
+import { deleteVendorSchema, deleteVendor } from "./tools/delete-vendor.js";
+import { getItemsSchema, getItems } from "./tools/get-items.js";
+import { createItemSchema, createItem } from "./tools/create-item.js";
+import { updateItemSchema, updateItem } from "./tools/update-item.js";
+import { deleteItemSchema, deleteItem } from "./tools/delete-item.js";
+import { createQuotationSchema, createQuotation } from "./tools/create-quotation.js";
+import { updateQuotationStatusSchema, updateQuotationStatus } from "./tools/update-quotation-status.js";
+import { createPurchaseOrderSchema, createPurchaseOrder } from "./tools/create-purchase-order.js";
+import { updatePurchaseOrderStatusSchema, updatePurchaseOrderStatus } from "./tools/update-purchase-order-status.js";
+import { createBillSchema, createBill } from "./tools/create-bill.js";
+import { updateBillStatusSchema, updateBillStatus } from "./tools/update-bill-status.js";
+import { createRecurringInvoiceSchema, createRecurringInvoice } from "./tools/create-recurring-invoice.js";
+import { updateRecurringInvoiceSchema, updateRecurringInvoice } from "./tools/update-recurring-invoice.js";
+import { deleteRecurringInvoiceSchema, deleteRecurringInvoice } from "./tools/delete-recurring-invoice.js";
+import { createCreditDebitNoteSchema, createCreditDebitNote } from "./tools/create-credit-debit-note.js";
+import { createTagSchema, createTag } from "./tools/create-tag.js";
+import { updateTagSchema, updateTag } from "./tools/update-tag.js";
+import { deleteTagSchema, deleteTag } from "./tools/delete-tag.js";
+import { assignTagSchema, assignTag } from "./tools/assign-tag.js";
+import { createAccountSchema, createAccount } from "./tools/create-account.js";
+import { updateAccountSchema, updateAccount } from "./tools/update-account.js";
+
+// ── Phase 4: Feature modules ────────────────────────────────────
+import { getAgreementsSchema, getAgreements } from "./tools/get-agreements.js";
+import { getAgreementDetailSchema, getAgreementDetail } from "./tools/get-agreement-detail.js";
+import { createAgreementSchema, createAgreement } from "./tools/create-agreement.js";
+import { updateAgreementStatusSchema, updateAgreementStatus } from "./tools/update-agreement-status.js";
+import { getClausesSchema, getClauses } from "./tools/get-clauses.js";
+import { getContractTemplatesSchema, getContractTemplates } from "./tools/get-contract-templates.js";
+import { getBillingSchedulesSchema, getBillingSchedules } from "./tools/get-billing-schedules.js";
+import { createBillingScheduleSchema, createBillingSchedule } from "./tools/create-billing-schedule.js";
+import { getDataroomFoldersSchema, getDataroomFolders } from "./tools/get-dataroom-folders.js";
+import { getDataroomFilesSchema, getDataroomFiles } from "./tools/get-dataroom-files.js";
+import { getDataroomFileDetailSchema, getDataroomFileDetail } from "./tools/get-dataroom-file-detail.js";
+import { searchDataroomSchema, searchDataroom } from "./tools/search-dataroom.js";
+import { getDataroomActivitySchema, getDataroomActivity } from "./tools/get-dataroom-activity.js";
+import { createDataroomFolderSchema, createDataroomFolder } from "./tools/create-dataroom-folder.js";
+import { getFixedAssetsSchema, getFixedAssets } from "./tools/get-fixed-assets.js";
+import { getAssetDetailSchema, getAssetDetail } from "./tools/get-asset-detail.js";
+import { createFixedAssetSchema, createFixedAsset } from "./tools/create-fixed-asset.js";
+import { updateAssetStatusSchema, updateAssetStatus } from "./tools/update-asset-status.js";
+import { getAssetCategoriesSchema, getAssetCategories } from "./tools/get-asset-categories.js";
+import { getDepreciationScheduleSchema, getDepreciationSchedule } from "./tools/get-depreciation-schedule.js";
+import { getAssetSummarySchema, getAssetSummary } from "./tools/get-asset-summary.js";
+import { getTeamMembersSchema, getTeamMembers } from "./tools/get-team-members.js";
+import { getStaffInvitationsSchema, getStaffInvitations } from "./tools/get-staff-invitations.js";
+import { getOrganizationLinkRequestsSchema, getOrganizationLinkRequests } from "./tools/get-organization-link-requests.js";
+import { getAuditTrailSchema, getAuditTrail } from "./tools/get-audit-trail.js";
+import { getEntityHistorySchema, getEntityHistory } from "./tools/get-entity-history.js";
+import { getEinvoiceStatusSchema, getEinvoiceStatus } from "./tools/get-einvoice-status.js";
+
+// ── Code Mode ────────────────────────────────────────────────
+import { z } from "zod";
+import type { ToolRegistryEntry } from "./code-mode/search-tools.js";
+import { searchToolsSchema, createSearchToolsHandler, deriveCategory } from "./code-mode/search-tools.js";
+import { executeCodeSchema, createExecuteCodeHandler } from "./code-mode/execute-code.js";
+import type { SandboxToolHandler } from "./code-mode/sandbox.js";
+
+const TOOL_TIMEOUT_MS = parseInt(process.env.MCP_TOOL_TIMEOUT_MS || "30000", 10);
+
 /**
- * Wrap a tool handler to auto-inject tenant, check scopes, and log execution.
+ * Wrap a tool handler to auto-inject tenant, check scopes, enforce timeout, and log execution.
  * In HTTP mode, the API key determines the tenant — tool params are ignored.
  * In stdio mode (no authTenant), the handler runs with whatever params the caller provides.
  */
@@ -104,10 +188,15 @@ function withTenant<T extends TenantArgs>(
       }
     }
 
-    // Execute with timing + logging
+    // Execute with timing + logging + timeout
     const startTime = Date.now();
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await handler(args);
+      const timeoutPromise = new Promise<CallToolResult>((_, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error(`Tool "${toolName}" timed out after ${TOOL_TIMEOUT_MS}ms`)), TOOL_TIMEOUT_MS);
+      });
+      const result = await Promise.race([handler(args), timeoutPromise]);
+      clearTimeout(timeoutHandle);
       const durationMs = Date.now() - startTime;
       const success = !result.isError;
       const logFn = success ? log.info.bind(log) : log.error.bind(log);
@@ -120,15 +209,17 @@ function withTenant<T extends TenantArgs>(
       recordToolExecution(toolName, success, durationMs);
       return result;
     } catch (error) {
+      clearTimeout(timeoutHandle);
       const durationMs = Date.now() - startTime;
+      const message = error instanceof Error ? error.message : String(error);
       log.error("Tool failed", {
         tool: toolName,
         durationMs,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         tenant: authTenant?.value,
       });
       recordToolExecution(toolName, false, durationMs);
-      throw error;
+      return errorResponse(message);
     }
   };
 }
@@ -166,13 +257,50 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
     ],
   });
 
-  // Helpers to wrap handlers with tenant injection + scope enforcement
-  const r = <T extends TenantArgs>(name: string, handler: (args: T) => Promise<CallToolResult>) =>
-    withTenant(name, handler, authTenant, authRecord, "read");
-  const w = <T extends TenantArgs>(name: string, handler: (args: T) => Promise<CallToolResult>) =>
-    withTenant(name, handler, authTenant, authRecord, "write");
-  const q = <T extends TenantArgs>(name: string, handler: (args: T) => Promise<CallToolResult>) =>
-    withTenant(name, handler, authTenant, authRecord, "query:execute");
+  // Code Mode registry — auto-populated by intercepting registerTool calls
+  const toolHandlers = new Map<string, SandboxToolHandler>();
+  const toolRegistryEntries: ToolRegistryEntry[] = [];
+
+  // Tools excluded from Code Mode registry
+  const CODE_MODE_EXCLUDED = new Set(["search_schema", "execute_query", "search_tools", "execute_code"]);
+
+  // Intercept registerTool to capture descriptions + schemas for Code Mode registry.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const _origRegisterTool = server.registerTool.bind(server) as (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (server as any).registerTool = (name: string, config: any, handler: any) => {
+    if (!CODE_MODE_EXCLUDED.has(name) && config?.inputSchema) {
+      const scope = getToolScope(name);
+      toolRegistryEntries.push({
+        name,
+        description: (config.description as string) || name,
+        category: deriveCategory(name, scope),
+        inputSchema: config.inputSchema as Record<string, z.ZodTypeAny>,
+      });
+    }
+    return _origRegisterTool(name, config, handler);
+  };
+
+  // Wrap handler with tenant injection + scope enforcement (scope looked up from TOOL_SCOPE_MAP)
+  const t = <T extends TenantArgs>(name: string, handler: (args: T) => Promise<CallToolResult>) => {
+    const scope = getToolScope(name);
+    const wrapped = withTenant(name, handler, authTenant, authRecord, scope);
+
+    // Also store handler for Code Mode sandbox proxy
+    if (!CODE_MODE_EXCLUDED.has(name)) {
+      toolHandlers.set(name, async (args) => {
+        const result = await wrapped(args as T);
+        const text = result.content?.[0]?.type === "text" ? (result.content[0] as { text: string }).text : "{}";
+        try {
+          return JSON.parse(text) as { success: boolean; data?: unknown; error?: string };
+        } catch {
+          return result.isError ? { success: false, error: text } : { success: true, data: text };
+        }
+      });
+    }
+
+    return wrapped;
+  };
 
   // Strip tenant fields from schemas in HTTP mode
   const s = <T extends Record<string, unknown>>(schema: T) => stripTenantFields(schema, isHttp);
@@ -194,8 +322,9 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
 **Key trigger phrases:** "company profile", "business details", "who am I", "what company"`,
     inputSchema: s(getCompanyProfileSchema),
+    outputSchema: companyProfileOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_company_profile", getCompanyProfile));
+  }, t("get_company_profile", getCompanyProfile));
 
   server.registerTool("get_financial_summary", {
     title: "Get Financial Summary",
@@ -214,8 +343,9 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
 **Key trigger phrases:** "financial overview", "dashboard", "how are we doing", "summary"`,
     inputSchema: s(getFinancialSummarySchema),
+    outputSchema: financialSummaryOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_financial_summary", getFinancialSummary));
+  }, t("get_financial_summary", getFinancialSummary));
 
   // ── Chart of Accounts ─────────────────────────────────────────
 
@@ -236,8 +366,9 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
 **Key trigger phrases:** "chart of accounts", "COA", "account list", "what accounts"`,
     inputSchema: s(getChartOfAccountsSchema),
+    outputSchema: chartOfAccountsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_chart_of_accounts", getChartOfAccounts));
+  }, t("get_chart_of_accounts", getChartOfAccounts));
 
   server.registerTool("search_accounts", {
     title: "Search Accounts",
@@ -254,8 +385,9 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
 **Key trigger phrases:** "find account", "which account for", "search accounts"`,
     inputSchema: s(searchAccountsSchema),
+    outputSchema: searchAccountsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("search_accounts", searchAccounts));
+  }, t("search_accounts", searchAccounts));
 
   // ── Account Balances & Activity ───────────────────────────────
 
@@ -274,8 +406,9 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
 **Key trigger phrases:** "account balance", "balance for", "period balances", "YTD"`,
     inputSchema: s(getAccountBalancesSchema),
+    outputSchema: accountBalancesOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_account_balances", getAccountBalances));
+  }, t("get_account_balances", getAccountBalances));
 
   server.registerTool("get_account_activity", {
     title: "Get Account Activity",
@@ -293,7 +426,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "account activity", "transactions in account", "sub-ledger", "account detail"`,
     inputSchema: s(getAccountActivitySchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_account_activity", getAccountActivity));
+  }, t("get_account_activity", getAccountActivity));
 
   // ── Financial Accounts (Banks) ────────────────────────────────
 
@@ -313,7 +446,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "bank accounts", "financial accounts", "which account to import into"`,
     inputSchema: s(getFinancialAccountsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_financial_accounts", getFinancialAccounts));
+  }, t("get_financial_accounts", getFinancialAccounts));
 
   // ── Bank Transactions ─────────────────────────────────────────
 
@@ -332,8 +465,9 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
 **Key trigger phrases:** "bank transactions", "recent transactions", "show transactions"`,
     inputSchema: s(getBankTransactionsSchema),
+    outputSchema: bankTransactionsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_bank_transactions", getBankTransactions));
+  }, t("get_bank_transactions", getBankTransactions));
 
   server.registerTool("search_bank_transactions", {
     title: "Search Bank Transactions",
@@ -350,7 +484,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "find transaction", "search transactions", "payment to"`,
     inputSchema: s(searchBankTransactionsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("search_bank_transactions", searchBankTransactions));
+  }, t("search_bank_transactions", searchBankTransactions));
 
   server.registerTool("create_bank_transactions", {
     title: "Import Bank Transactions",
@@ -373,7 +507,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "import transactions", "upload bank statement", "add bank data"`,
     inputSchema: s(createBankTransactionsSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, w("create_bank_transactions", createBankTransactions));
+  }, t("create_bank_transactions", createBankTransactions));
 
   server.registerTool("update_bank_transaction_status", {
     title: "Update Bank Transaction Status",
@@ -393,7 +527,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "categorize transaction", "update transaction status", "mark as matched"`,
     inputSchema: s(updateBankTransactionStatusSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, w("update_bank_transaction_status", updateBankTransactionStatus));
+  }, t("update_bank_transaction_status", updateBankTransactionStatus));
 
   server.registerTool("post_bank_transactions", {
     title: "Post Bank Transactions to GL",
@@ -417,7 +551,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "post to GL", "post transactions", "create entries from transactions"`,
     inputSchema: s(postBankTransactionsSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("post_bank_transactions", postBankTransactions));
+  }, t("post_bank_transactions", postBankTransactions));
 
   // ── Categorization Rules ──────────────────────────────────────
 
@@ -436,7 +570,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "categorization rules", "auto-categorize", "transaction rules"`,
     inputSchema: s(getCategorizationRulesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_categorization_rules", getCategorizationRules));
+  }, t("get_categorization_rules", getCategorizationRules));
 
   server.registerTool("create_categorization_rule", {
     title: "Create Categorization Rule",
@@ -456,7 +590,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "create rule", "auto-categorize", "whenever I see transactions for"`,
     inputSchema: s(createCategorizationRuleSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("create_categorization_rule", createCategorizationRule));
+  }, t("create_categorization_rule", createCategorizationRule));
 
   server.registerTool("update_categorization_rule", {
     title: "Update Categorization Rule",
@@ -474,7 +608,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "update rule", "change rule", "deactivate rule"`,
     inputSchema: s(updateCategorizationRuleSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, w("update_categorization_rule", updateCategorizationRule));
+  }, t("update_categorization_rule", updateCategorizationRule));
 
   // ── Journal Entries ───────────────────────────────────────────
 
@@ -493,8 +627,9 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
 **Key trigger phrases:** "journal entries", "posted entries", "show entries"`,
     inputSchema: s(getJournalEntriesSchema),
+    outputSchema: journalEntriesOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_journal_entries", getJournalEntries));
+  }, t("get_journal_entries", getJournalEntries));
 
   server.registerTool("search_journal_entries", {
     title: "Search Journal Entries",
@@ -511,7 +646,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "find entry", "search entries", "entry number"`,
     inputSchema: s(searchJournalEntriesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("search_journal_entries", searchJournalEntries));
+  }, t("search_journal_entries", searchJournalEntries));
 
   server.registerTool("create_journal_entries", {
     title: "Create Journal Entries",
@@ -536,7 +671,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 **Key trigger phrases:** "create entry", "journal entry", "record adjustment", "book entry"`,
     inputSchema: s(createJournalEntriesSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("create_journal_entries", createJournalEntries));
+  }, t("create_journal_entries", createJournalEntries));
 
   server.registerTool("update_journal_entry_status", {
     title: "Update Journal Entry Status",
@@ -562,7 +697,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "post entry", "approve entry", "void entry"`,
     inputSchema: s(updateJournalEntryStatusSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("update_journal_entry_status", updateJournalEntryStatus));
+  }, t("update_journal_entry_status", updateJournalEntryStatus));
 
   // ── Journal Entry Templates ───────────────────────────────────
 
@@ -581,7 +716,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "templates", "recurring entries", "show templates"`,
     inputSchema: s(getJournalEntryTemplatesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_journal_entry_templates", getJournalEntryTemplates));
+  }, t("get_journal_entry_templates", getJournalEntryTemplates));
 
   server.registerTool("create_journal_entry_template", {
     title: "Create Journal Entry Template",
@@ -600,7 +735,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "create template", "recurring entry", "set up monthly"`,
     inputSchema: s(createJournalEntryTemplateSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("create_journal_entry_template", createJournalEntryTemplate));
+  }, t("create_journal_entry_template", createJournalEntryTemplate));
 
   server.registerTool("apply_journal_entry_template", {
     title: "Apply Journal Entry Template",
@@ -619,7 +754,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "apply template", "run template", "process recurring"`,
     inputSchema: s(applyJournalEntryTemplateSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("apply_journal_entry_template", applyJournalEntryTemplate));
+  }, t("apply_journal_entry_template", applyJournalEntryTemplate));
 
   // ── General Ledger & Trial Balance ────────────────────────────
 
@@ -639,7 +774,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "general ledger", "GL", "posted transactions", "ledger entries"`,
     inputSchema: s(getGeneralLedgerSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_general_ledger", getGeneralLedger));
+  }, t("get_general_ledger", getGeneralLedger));
 
   server.registerTool("get_trial_balance", {
     title: "Get Trial Balance",
@@ -658,8 +793,9 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
 **Key trigger phrases:** "trial balance", "TB", "debit credit check"`,
     inputSchema: s(getTrialBalanceSchema),
+    outputSchema: trialBalanceOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_trial_balance", getTrialBalance));
+  }, t("get_trial_balance", getTrialBalance));
 
   // ── Financial Statements ──────────────────────────────────────
 
@@ -678,8 +814,9 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
 **Key trigger phrases:** "P&L", "income statement", "profit and loss", "profitability"`,
     inputSchema: s(getIncomeStatementSchema),
+    outputSchema: incomeStatementOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_income_statement", getIncomeStatement));
+  }, t("get_income_statement", getIncomeStatement));
 
   server.registerTool("get_balance_sheet", {
     title: "Get Balance Sheet",
@@ -695,8 +832,9 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
 **Key trigger phrases:** "balance sheet", "assets and liabilities", "financial position", "net worth"`,
     inputSchema: s(getBalanceSheetSchema),
+    outputSchema: balanceSheetOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_balance_sheet", getBalanceSheet));
+  }, t("get_balance_sheet", getBalanceSheet));
 
   server.registerTool("get_cash_flow_summary", {
     title: "Get Cash Flow Summary",
@@ -712,8 +850,9 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
 **Key trigger phrases:** "cash flow", "spending", "where's the money going", "inflows and outflows"`,
     inputSchema: s(getCashFlowSummarySchema),
+    outputSchema: cashFlowSummaryOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_cash_flow_summary", getCashFlowSummary));
+  }, t("get_cash_flow_summary", getCashFlowSummary));
 
   // ── Customers & AR ────────────────────────────────────────────
 
@@ -732,8 +871,9 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
 **Key trigger phrases:** "customers", "client list", "who do we invoice"`,
     inputSchema: s(getCustomersSchema),
+    outputSchema: customersOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_customers", getCustomers));
+  }, t("get_customers", getCustomers));
 
   server.registerTool("get_customer_statement", {
     title: "Get Customer Statement of Account",
@@ -751,7 +891,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "customer statement", "statement of account", "what does X owe"`,
     inputSchema: s(getCustomerStatementSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_customer_statement", getCustomerStatement));
+  }, t("get_customer_statement", getCustomerStatement));
 
   server.registerTool("get_customer_aging", {
     title: "Get Customer Aging (AR)",
@@ -769,7 +909,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "AR aging", "customer aging", "who owes us", "overdue receivables"`,
     inputSchema: s(getCustomerAgingSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_customer_aging", getCustomerAging));
+  }, t("get_customer_aging", getCustomerAging));
 
   server.registerTool("get_invoice_aging_detail", {
     title: "Get Invoice Aging Detail",
@@ -787,7 +927,7 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 **Key trigger phrases:** "overdue invoices", "invoice aging", "late invoices", "which invoices are past due"`,
     inputSchema: s(getInvoiceAgingDetailSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_invoice_aging_detail", getInvoiceAgingDetail));
+  }, t("get_invoice_aging_detail", getInvoiceAgingDetail));
 
   // ── Invoices ──────────────────────────────────────────────────
 
@@ -805,8 +945,9 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
 **Key trigger phrases:** "invoices", "show invoices", "invoice list"`,
     inputSchema: s(getInvoicesSchema),
+    outputSchema: invoicesOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_invoices", getInvoices));
+  }, t("get_invoices", getInvoices));
 
   server.registerTool("create_invoice", {
     title: "Create Invoice",
@@ -829,8 +970,9 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
 **Key trigger phrases:** "create invoice", "invoice for", "bill customer", "new invoice"`,
     inputSchema: s(createInvoiceSchema),
+    outputSchema: createInvoiceOutputSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("create_invoice", createInvoice));
+  }, t("create_invoice", createInvoice));
 
   server.registerTool("update_invoice_status", {
     title: "Update Invoice Status",
@@ -857,7 +999,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "finalize invoice", "mark invoice paid", "void invoice"`,
     inputSchema: s(updateInvoiceStatusSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("update_invoice_status", updateInvoiceStatus));
+  }, t("update_invoice_status", updateInvoiceStatus));
 
   server.registerTool("get_credit_debit_notes", {
     title: "List Credit/Debit Notes",
@@ -874,7 +1016,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "credit notes", "debit notes", "adjustments"`,
     inputSchema: s(getCreditDebitNotesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_credit_debit_notes", getCreditDebitNotes));
+  }, t("get_credit_debit_notes", getCreditDebitNotes));
 
   // ── Vendors & AP ──────────────────────────────────────────────
 
@@ -893,8 +1035,9 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
 **Key trigger phrases:** "vendors", "suppliers", "who do we pay", "vendor list"`,
     inputSchema: s(getVendorsSchema),
+    outputSchema: vendorsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_vendors", getVendors));
+  }, t("get_vendors", getVendors));
 
   server.registerTool("get_vendor_statement", {
     title: "Get Vendor Statement",
@@ -912,7 +1055,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "vendor statement", "how much do we owe", "vendor account"`,
     inputSchema: s(getVendorStatementSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_vendor_statement", getVendorStatement));
+  }, t("get_vendor_statement", getVendorStatement));
 
   server.registerTool("get_vendor_aging", {
     title: "Get Vendor Aging (AP)",
@@ -930,7 +1073,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "AP aging", "vendor aging", "who do we owe", "overdue payables"`,
     inputSchema: s(getVendorAgingSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_vendor_aging", getVendorAging));
+  }, t("get_vendor_aging", getVendorAging));
 
   // ── Bills ─────────────────────────────────────────────────────
 
@@ -949,7 +1092,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "bills", "payables", "vendor invoices", "pending bills"`,
     inputSchema: s(getBillsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_bills", getBills));
+  }, t("get_bills", getBills));
 
   // ── Purchase Orders ───────────────────────────────────────────
 
@@ -968,7 +1111,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "purchase orders", "POs", "what have we ordered", "procurement"`,
     inputSchema: s(getPurchaseOrdersSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_purchase_orders", getPurchaseOrders));
+  }, t("get_purchase_orders", getPurchaseOrders));
 
   // ── Payments ──────────────────────────────────────────────────
 
@@ -987,7 +1130,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "payments", "payment history", "what did we pay", "what came in"`,
     inputSchema: s(getPaymentsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_payments", getPayments));
+  }, t("get_payments", getPayments));
 
   server.registerTool("record_payment", {
     title: "Record Payment",
@@ -1010,7 +1153,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "record payment", "received payment", "paid vendor", "customer paid"`,
     inputSchema: s(recordPaymentSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("record_payment", recordPayment));
+  }, t("record_payment", recordPayment));
 
   // ── Quotations ────────────────────────────────────────────────
 
@@ -1029,7 +1172,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "quotations", "quotes", "proposals", "pending quotes"`,
     inputSchema: s(getQuotationsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_quotations", getQuotations));
+  }, t("get_quotations", getQuotations));
 
   // ── Recurring Invoices ────────────────────────────────────────
 
@@ -1048,7 +1191,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "recurring invoices", "subscription billing", "auto-invoicing", "scheduled invoices"`,
     inputSchema: s(getRecurringInvoicesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_recurring_invoices", getRecurringInvoices));
+  }, t("get_recurring_invoices", getRecurringInvoices));
 
   // ── Tags ──────────────────────────────────────────────────────
 
@@ -1065,7 +1208,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "tags", "labels", "categories"`,
     inputSchema: s(getTagsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_tags", getTags));
+  }, t("get_tags", getTags));
 
   // ── Period Management ─────────────────────────────────────────
 
@@ -1085,7 +1228,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "period status", "which periods are open", "ready to close"`,
     inputSchema: s(getPeriodStatusSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_period_status", getPeriodStatus));
+  }, t("get_period_status", getPeriodStatus));
 
   server.registerTool("close_period", {
     title: "Close Accounting Period",
@@ -1110,7 +1253,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "close period", "close the month", "lock period", "month-end close"`,
     inputSchema: s(closePeriodSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("close_period", closePeriod));
+  }, t("close_period", closePeriod));
 
   server.registerTool("reopen_period", {
     title: "Reopen Accounting Period",
@@ -1132,7 +1275,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "reopen period", "unlock period", "reopen the month"`,
     inputSchema: s(reopenPeriodSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, w("reopen_period", reopenPeriod));
+  }, t("reopen_period", reopenPeriod));
 
   // ── Reconciliation ────────────────────────────────────────────
 
@@ -1151,7 +1294,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "reconciliation status", "how much reconciled", "unreconciled entries"`,
     inputSchema: s(getReconciliationStatusSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, r("get_reconciliation_status", getReconciliationStatus));
+  }, t("get_reconciliation_status", getReconciliationStatus));
 
   server.registerTool("reconcile_accounts", {
     title: "Reconcile GL Entries",
@@ -1175,7 +1318,411 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "reconcile", "mark reconciled", "bank reconciliation"`,
     inputSchema: s(reconcileAccountsSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, w("reconcile_accounts", reconcileAccounts));
+  }, t("reconcile_accounts", reconcileAccounts));
+
+  // ── Customer CRUD ────────────────────────────────────────────
+
+  server.registerTool("create_customer", {
+    title: "Create Customer",
+    description: `Create a new customer record. Returns the new customer ID.`,
+    inputSchema: s(createCustomerSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_customer", createCustomer));
+
+  server.registerTool("update_customer", {
+    title: "Update Customer",
+    description: `Update an existing customer's details. Returns before/after state.`,
+    inputSchema: s(updateCustomerSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("update_customer", updateCustomer));
+
+  server.registerTool("delete_customer", {
+    title: "Deactivate Customer",
+    description: `Soft-delete (deactivate) a customer. Fails if customer has outstanding invoices. This is a soft delete — the customer becomes inactive but data is preserved.`,
+    inputSchema: s(deleteCustomerSchema),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, t("delete_customer", deleteCustomer));
+
+  // ── Vendor CRUD ─────────────────────────────────────────────
+
+  server.registerTool("create_vendor", {
+    title: "Create Vendor",
+    description: `Create a new vendor (supplier) record. Returns the new vendor ID.`,
+    inputSchema: s(createVendorSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_vendor", createVendor));
+
+  server.registerTool("update_vendor", {
+    title: "Update Vendor",
+    description: `Update an existing vendor's details. Returns before/after state.`,
+    inputSchema: s(updateVendorSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("update_vendor", updateVendor));
+
+  server.registerTool("delete_vendor", {
+    title: "Deactivate Vendor",
+    description: `Soft-delete (deactivate) a vendor. Fails if vendor has outstanding bills.`,
+    inputSchema: s(deleteVendorSchema),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, t("delete_vendor", deleteVendor));
+
+  // ── Items CRUD ──────────────────────────────────────────────
+
+  server.registerTool("get_items", {
+    title: "List Items",
+    description: `List product/service items used in invoices, quotations, and bills.`,
+    inputSchema: s(getItemsSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_items", getItems));
+
+  server.registerTool("create_item", {
+    title: "Create Item",
+    description: `Create a reusable product/service item with unit price and tax rate.`,
+    inputSchema: s(createItemSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_item", createItem));
+
+  server.registerTool("update_item", {
+    title: "Update Item",
+    description: `Update an existing item's name, price, or tax rate.`,
+    inputSchema: s(updateItemSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("update_item", updateItem));
+
+  server.registerTool("delete_item", {
+    title: "Delete Item",
+    description: `Permanently delete an item. Does not affect invoices/bills that already reference it.`,
+    inputSchema: s(deleteItemSchema),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, t("delete_item", deleteItem));
+
+  // ── Quotation Write Tools ───────────────────────────────────
+
+  server.registerTool("create_quotation", {
+    title: "Create Quotation",
+    description: `Create a new quotation for a customer with line items and auto-generated number.`,
+    inputSchema: s(createQuotationSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_quotation", createQuotation));
+
+  server.registerTool("update_quotation_status", {
+    title: "Update Quotation Status",
+    description: `Change quotation status. Valid transitions: draft→sent, sent→viewed/accepted/rejected/expired, viewed→accepted/rejected/expired, accepted→converted.`,
+    inputSchema: s(updateQuotationStatusSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("update_quotation_status", updateQuotationStatus));
+
+  // ── Purchase Order Write Tools ──────────────────────────────
+
+  server.registerTool("create_purchase_order", {
+    title: "Create Purchase Order",
+    description: `Create a new purchase order for a vendor with line items.`,
+    inputSchema: s(createPurchaseOrderSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_purchase_order", createPurchaseOrder));
+
+  server.registerTool("update_purchase_order_status", {
+    title: "Update Purchase Order Status",
+    description: `Change PO status. Valid transitions: draft→pending_approval/approved/void, pending_approval→approved/rejected/void, approved→partially_received/received/closed/void.`,
+    inputSchema: s(updatePurchaseOrderStatusSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("update_purchase_order_status", updatePurchaseOrderStatus));
+
+  // ── Bill Write Tools ────────────────────────────────────────
+
+  server.registerTool("create_bill", {
+    title: "Create Bill",
+    description: `Create a new bill (vendor invoice) with line items.`,
+    inputSchema: s(createBillSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_bill", createBill));
+
+  server.registerTool("update_bill_status", {
+    title: "Update Bill Status",
+    description: `Change bill status through approval and payment workflow.`,
+    inputSchema: s(updateBillStatusSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("update_bill_status", updateBillStatus));
+
+  // ── Recurring Invoice Write Tools ───────────────────────────
+
+  server.registerTool("create_recurring_invoice", {
+    title: "Create Recurring Invoice Template",
+    description: `Create an automated recurring invoice template with frequency and schedule.`,
+    inputSchema: s(createRecurringInvoiceSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_recurring_invoice", createRecurringInvoice));
+
+  server.registerTool("update_recurring_invoice", {
+    title: "Update Recurring Invoice Template",
+    description: `Update a recurring invoice template — status, schedule, or settings.`,
+    inputSchema: s(updateRecurringInvoiceSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("update_recurring_invoice", updateRecurringInvoice));
+
+  server.registerTool("delete_recurring_invoice", {
+    title: "Cancel Recurring Invoice Template",
+    description: `Cancel a recurring invoice template. Soft-delete — sets status to cancelled.`,
+    inputSchema: s(deleteRecurringInvoiceSchema),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, t("delete_recurring_invoice", deleteRecurringInvoice));
+
+  // ── Credit/Debit Note Write Tools ───────────────────────────
+
+  server.registerTool("create_credit_debit_note", {
+    title: "Create Credit/Debit Note",
+    description: `Create a credit note (reduces amount owed) or debit note (increases amount owed) against an invoice.`,
+    inputSchema: s(createCreditDebitNoteSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_credit_debit_note", createCreditDebitNote));
+
+  // ── Tag Write Tools ─────────────────────────────────────────
+
+  server.registerTool("create_tag", {
+    title: "Create Tag",
+    description: `Create a new tag for organizing entities.`,
+    inputSchema: s(createTagSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_tag", createTag));
+
+  server.registerTool("update_tag", {
+    title: "Update Tag",
+    description: `Update a tag's name, color, or description.`,
+    inputSchema: s(updateTagSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("update_tag", updateTag));
+
+  server.registerTool("delete_tag", {
+    title: "Delete Tag",
+    description: `Delete a tag. All entity assignments for this tag are also removed.`,
+    inputSchema: s(deleteTagSchema),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  }, t("delete_tag", deleteTag));
+
+  server.registerTool("assign_tag", {
+    title: "Assign Tag to Entity",
+    description: `Assign a tag to an entity (customer, vendor, invoice, bill, quotation, or purchase order).`,
+    inputSchema: s(assignTagSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("assign_tag", assignTag));
+
+  // ── COA Account Write Tools ─────────────────────────────────
+
+  server.registerTool("create_account", {
+    title: "Create COA Account",
+    description: `Create a new account in the Chart of Accounts with code, type, and normal balance direction.`,
+    inputSchema: s(createAccountSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_account", createAccount));
+
+  server.registerTool("update_account", {
+    title: "Update COA Account",
+    description: `Update an account's name, description, or active status. Cannot deactivate system accounts.`,
+    inputSchema: s(updateAccountSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("update_account", updateAccount));
+
+  // ── Agreements Module ─────────────────────────────────────────
+
+  server.registerTool("get_agreements", {
+    title: "List Agreements", description: `List agreements with status, type, and counterparty filters.`,
+    inputSchema: s(getAgreementsSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_agreements", getAgreements));
+
+  server.registerTool("get_agreement_detail", {
+    title: "Get Agreement Detail", description: `Get a single agreement with signers and version history.`,
+    inputSchema: s(getAgreementDetailSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_agreement_detail", getAgreementDetail));
+
+  server.registerTool("create_agreement", {
+    title: "Create Agreement", description: `Create a new agreement from scratch or from a template.`,
+    inputSchema: s(createAgreementSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_agreement", createAgreement));
+
+  server.registerTool("update_agreement_status", {
+    title: "Update Agreement Status", description: `Change agreement status through the workflow (draft→sent→signing→executed→active→completed).`,
+    inputSchema: s(updateAgreementStatusSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("update_agreement_status", updateAgreementStatus));
+
+  server.registerTool("get_clauses", {
+    title: "List Clause Library", description: `List reusable contract clauses with category and search filters.`,
+    inputSchema: s(getClausesSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_clauses", getClauses));
+
+  server.registerTool("get_contract_templates", {
+    title: "List Contract Templates", description: `List contract templates for agreement creation.`,
+    inputSchema: s(getContractTemplatesSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_contract_templates", getContractTemplates));
+
+  server.registerTool("get_billing_schedules", {
+    title: "List Billing Schedules", description: `List billing schedules linked to agreements, with milestones.`,
+    inputSchema: s(getBillingSchedulesSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_billing_schedules", getBillingSchedules));
+
+  server.registerTool("create_billing_schedule", {
+    title: "Create Billing Schedule", description: `Create a billing schedule linked to an agreement with milestones.`,
+    inputSchema: s(createBillingScheduleSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_billing_schedule", createBillingSchedule));
+
+  // ── Data Room Module ────────────────────────────────────────
+
+  server.registerTool("get_dataroom_folders", {
+    title: "List Data Room Folders", description: `List data room folder hierarchy. Metadata only — no file downloads.`,
+    inputSchema: s(getDataroomFoldersSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_dataroom_folders", getDataroomFolders));
+
+  server.registerTool("get_dataroom_files", {
+    title: "List Data Room Files", description: `List files in data room with folder and search filters. Metadata only.`,
+    inputSchema: s(getDataroomFilesSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_dataroom_files", getDataroomFiles));
+
+  server.registerTool("get_dataroom_file_detail", {
+    title: "Get Data Room File Detail", description: `Get metadata, versions, and access info for a data room file.`,
+    inputSchema: s(getDataroomFileDetailSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_dataroom_file_detail", getDataroomFileDetail));
+
+  server.registerTool("search_dataroom", {
+    title: "Search Data Room", description: `Search data room files by name, description, or type.`,
+    inputSchema: s(searchDataroomSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("search_dataroom", searchDataroom));
+
+  server.registerTool("get_dataroom_activity", {
+    title: "Get Data Room Activity", description: `Get data room audit trail — file uploads, downloads, folder changes.`,
+    inputSchema: s(getDataroomActivitySchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_dataroom_activity", getDataroomActivity));
+
+  server.registerTool("create_dataroom_folder", {
+    title: "Create Data Room Folder", description: `Create a new folder in the data room.`,
+    inputSchema: s(createDataroomFolderSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_dataroom_folder", createDataroomFolder));
+
+  // ── Fixed Assets Module ─────────────────────────────────────
+
+  server.registerTool("get_fixed_assets", {
+    title: "List Fixed Assets", description: `List fixed assets with status, category, and search filters.`,
+    inputSchema: s(getFixedAssetsSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_fixed_assets", getFixedAssets));
+
+  server.registerTool("get_asset_detail", {
+    title: "Get Asset Detail", description: `Get a single asset with depreciation schedule and capital allowance records.`,
+    inputSchema: s(getAssetDetailSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_asset_detail", getAssetDetail));
+
+  server.registerTool("create_fixed_asset", {
+    title: "Register Fixed Asset", description: `Register a new fixed asset with depreciation parameters.`,
+    inputSchema: s(createFixedAssetSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("create_fixed_asset", createFixedAsset));
+
+  server.registerTool("update_asset_status", {
+    title: "Update Asset Status", description: `Change asset status: draft→active, active→disposed/held_for_sale/fully_depreciated.`,
+    inputSchema: s(updateAssetStatusSchema),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, t("update_asset_status", updateAssetStatus));
+
+  server.registerTool("get_asset_categories", {
+    title: "List Asset Categories", description: `List asset categories with depreciation defaults and capital allowance rates.`,
+    inputSchema: s(getAssetCategoriesSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_asset_categories", getAssetCategories));
+
+  server.registerTool("get_depreciation_schedule", {
+    title: "Get Depreciation Schedule", description: `Get depreciation schedule for a specific asset or period.`,
+    inputSchema: s(getDepreciationScheduleSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_depreciation_schedule", getDepreciationSchedule));
+
+  server.registerTool("get_asset_summary", {
+    title: "Get Asset Register Summary", description: `Summary of fixed asset register by category and status.`,
+    inputSchema: s(getAssetSummarySchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_asset_summary", getAssetSummary));
+
+  // ── Staff/Team Module (read-only) ───────────────────────────
+
+  server.registerTool("get_team_members", {
+    title: "List Team Members", description: `List users with roles and status for this organization.`,
+    inputSchema: s(getTeamMembersSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_team_members", getTeamMembers));
+
+  server.registerTool("get_staff_invitations", {
+    title: "List Staff Invitations", description: `List pending, accepted, and expired staff invitations.`,
+    inputSchema: s(getStaffInvitationsSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_staff_invitations", getStaffInvitations));
+
+  server.registerTool("get_organization_link_requests", {
+    title: "List Organization Link Requests", description: `List pending organization link requests.`,
+    inputSchema: s(getOrganizationLinkRequestsSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_organization_link_requests", getOrganizationLinkRequests));
+
+  // ── Audit Trail Module ──────────────────────────────────────
+
+  server.registerTool("get_audit_trail", {
+    title: "Get Audit Trail", description: `Cross-module audit log with entity type, user, and date range filters.`,
+    inputSchema: s(getAuditTrailSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_audit_trail", getAuditTrail));
+
+  server.registerTool("get_entity_history", {
+    title: "Get Entity History", description: `Get change history for a specific entity (invoice, bill, customer, etc.).`,
+    inputSchema: s(getEntityHistorySchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_entity_history", getEntityHistory));
+
+  // ── E-Invoice Module ────────────────────────────────────────
+
+  server.registerTool("get_einvoice_status", {
+    title: "Get E-Invoice Status", description: `Check e-invoice credential status (masked) and submission statistics.`,
+    inputSchema: s(getEinvoiceStatusSchema),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, t("get_einvoice_status", getEinvoiceStatus));
+
+  // ── Scope-enforcing wrapper for tools without tenant params ───
+  const withCodeScope = <A>(
+    toolName: string,
+    handler: (args: A) => Promise<CallToolResult>,
+  ) => {
+    return async (args: A) => {
+      if (authRecord) {
+        const scope = getToolScope(toolName);
+        if (!checkScope(authRecord, scope)) {
+          log.warn("Scope denied", { tool: toolName, required: scope, scopes: authRecord.scopes });
+          return errorResponse(
+            `Insufficient permissions: this API key requires "${scope}" scope to use ${toolName}.`,
+          );
+        }
+      }
+      const startTime = Date.now();
+      try {
+        const result = await handler(args);
+        recordToolExecution(toolName, !result.isError, Date.now() - startTime);
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        recordToolExecution(toolName, false, Date.now() - startTime);
+        return errorResponse(msg);
+      }
+    };
+  };
 
   // ── Code Mode (Advanced) ──────────────────────────────────────
 
@@ -1196,7 +1743,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "database schema", "what tables", "table structure"`,
     inputSchema: s(searchSchemaSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, searchSchema);
+  }, withCodeScope("search_schema", searchSchema));
 
   server.registerTool("execute_query", {
     title: "Execute SQL Query",
@@ -1220,7 +1767,63 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 **Key trigger phrases:** "custom query", "SQL", "run a query", "complex report"`,
     inputSchema: s(executeQuerySchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, q("execute_query", executeQuery));
+  }, t("execute_query", executeQuery));
+
+  // ── Code Mode (Programmable) ──────────────────────────────────
+  // These tools use _origRegisterTool (bypassing the registry interceptor) and
+  // withCodeScope (not t()) because they don't have clientId/accountingFirmId params.
+  // The underlying cynco.* calls go through t()-wrapped handlers with full tenant/scope checks.
+
+  const codeModeSearchHandler = createSearchToolsHandler(toolRegistryEntries);
+  const codeModeExecuteHandler = createExecuteCodeHandler(toolHandlers);
+
+  _origRegisterTool("search_tools", {
+    title: "Search Tools",
+    description: `**Purpose:** Discover available tools and get TypeScript signatures for use with execute_code.
+
+**Returns:** Matched tool names, categories, descriptions, and TypeScript declarations for use in code scripts.
+
+**When to use:**
+- Before execute_code — discover which tools exist and their parameter types
+- User asks for a multi-step workflow that would benefit from batching tool calls
+- You want to reduce token usage by calling multiple tools in a single script
+
+**Workflow:** search_tools → read declarations → execute_code with cynco.* calls
+
+**Key trigger phrases:** "find tools", "what tools", "search tools", "code mode"`,
+    inputSchema: searchToolsSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, withCodeScope("search_tools", codeModeSearchHandler));
+
+  _origRegisterTool("execute_code", {
+    title: "Execute Code",
+    description: `**Purpose:** Run a JavaScript script that calls multiple tools in one round-trip. Dramatically reduces token usage for multi-step workflows.
+
+**IMPORTANT — Before using this tool:**
+1. Use search_tools first to discover available tools and get TypeScript signatures
+2. Call tools via \`await cynco.<tool_name>(args)\` — each call goes through the same auth and tenant scoping as direct tool calls
+3. Use \`console.log()\` to output results — the output is captured and returned
+
+**Sandbox:** The script runs in an isolated sandbox with NO access to process, require, import, fetch, setTimeout, eval, or Function. The only way to interact with the system is through \`cynco.*\` calls.
+
+**Limits:** 60s timeout, 50 tool calls max, 10KB script max, 50KB output max.
+
+**Example:**
+\`\`\`javascript
+const profile = await cynco.get_company_profile({});
+const summary = await cynco.get_financial_summary({});
+const aging = await cynco.get_customer_aging({});
+console.log({
+  company: profile.data?.companyName,
+  totalAR: summary.data?.outstandingAR,
+  overdueCustomers: aging.data?.customers?.filter(c => c.overdue > 0)
+});
+\`\`\`
+
+**Key trigger phrases:** "run code", "execute code", "batch tools", "multi-step script"`,
+    inputSchema: executeCodeSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, withCodeScope("execute_code", codeModeExecuteHandler));
 
   // ── Prompts ─────────────────────────────────────────────────────
 

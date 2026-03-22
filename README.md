@@ -47,7 +47,7 @@ The Cynco MCP server gives your AI agent **structured, read/write access** to yo
 
 ### 1. Get your MCP API key
 
-Log in to [cynco.io](https://cynco.io) → **Settings** → **API Keys** → **Generate MCP Key**
+Log in to [cynco.io](https://cynco.io) → **MCP Keys** → **Create MCP Key**
 
 Your key looks like `cak_abc123...` — save it securely, it's shown once.
 
@@ -112,8 +112,7 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 {
   "mcpServers": {
     "cynco": {
-      "type": "streamable-http",
-      "url": "https://mcp.cynco.io/mcp",
+      "serverUrl": "https://mcp.cynco.io/mcp",
       "headers": {
         "Authorization": "Bearer cak_your_api_key_here"
       }
@@ -500,6 +499,7 @@ docker run -p 3100:3100 \
 | `/ready` | `GET` | No | Readiness probe |
 | `/metrics` | `GET` | No | Prometheus metrics |
 | `/icon.png` | `GET` | No | Server icon |
+| `/.well-known/mcp.json` | `GET` | No | MCP service descriptor (capabilities, auth) |
 | `/.well-known/oauth-protected-resource` | `GET` | No | RFC 9728 OAuth metadata |
 
 </details>

@@ -249,11 +249,8 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
     name: "cynco-accounting",
     version: "2.0.0",
     icons: [
-      {
-        src: `${baseUrl}/icon.png`,
-        mimeType: "image/png",
-        sizes: ["128x128"],
-      },
+      { src: `${baseUrl}/icon.png`, mimeType: "image/png", sizes: ["128x128"] },
+      { src: `${baseUrl}/icon-light.png`, mimeType: "image/png", sizes: ["128x128"] },
     ],
   });
 

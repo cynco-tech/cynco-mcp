@@ -21,16 +21,17 @@ const TENANT_FREE_TABLES = new Set([
   "journal_entry_lines",
   "journal_entry_status_history",
   "accnt_clients",
-  "users",
 ]);
 
-// Forbidden tables — never expose
+// Forbidden tables — never expose (PII, credentials, internal state)
 const FORBIDDEN_TABLES = new Set([
   "payment_api_keys",
   "ai_api_keys",
   "mcp_api_keys",
   "card_details",
   "einvoice_credentials",
+  "users",              // PII (email, names) — use get_team_members instead
+  "cli_auth_sessions",  // auth sessions
   "__drizzle_migrations",
 ]);
 

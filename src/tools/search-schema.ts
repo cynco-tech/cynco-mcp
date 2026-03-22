@@ -9,11 +9,15 @@ const FORBIDDEN_TABLES = new Set([
   "mcp_api_keys",
   "card_details",
   "einvoice_credentials",
+  "users",              // PII — use get_team_members instead
+  "cli_auth_sessions",  // auth sessions
   "__drizzle_migrations",
 ]);
 
-// Pre-built schema loaded once and cached
+// Pre-built schema with 15-minute TTL (invalidates after migrations deploy)
+const SCHEMA_CACHE_TTL_MS = 15 * 60 * 1000;
 let cachedSchema: SchemaInfo | null = null;
+let cacheExpiresAt = 0;
 
 interface ColumnInfo {
   name: string;
@@ -33,7 +37,7 @@ interface SchemaInfo {
 }
 
 async function loadSchema(): Promise<SchemaInfo> {
-  if (cachedSchema) return cachedSchema;
+  if (cachedSchema && Date.now() < cacheExpiresAt) return cachedSchema;
 
   // Load columns for accounting-relevant tables
   const colResult = await query(
@@ -96,6 +100,7 @@ async function loadSchema(): Promise<SchemaInfo> {
   }
 
   cachedSchema = { tables, tenantTables };
+  cacheExpiresAt = Date.now() + SCHEMA_CACHE_TTL_MS;
   return cachedSchema;
 }
 

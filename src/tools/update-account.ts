@@ -61,7 +61,8 @@ export async function updateAccount(args: {
 
       upd.fields.push(`updated_at = NOW()`);
       upd.values.push(args.accountId);
-      await client.query(`UPDATE accounts SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx}`, upd.values);
+      const updTw = tenantWhere(tenant, upd.paramIdx + 1);
+      await client.query(`UPDATE accounts SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx} AND ${updTw.sql}`, [...upd.values, ...updTw.params]);
 
       return successResponse({
         id: args.accountId,

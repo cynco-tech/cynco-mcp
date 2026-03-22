@@ -47,7 +47,8 @@ export async function updateAgreementStatus(args: {
       if (args.newStatus === "terminated") updates.push(`terminated_at = NOW()`);
 
       params.push(args.agreementId);
-      await client.query(`UPDATE agreements SET ${updates.join(", ")} WHERE id = $${params.length}`, params);
+      const updTw = tenantWhere(tenant, params.length + 1);
+      await client.query(`UPDATE agreements SET ${updates.join(", ")} WHERE id = $${params.length} AND ${updTw.sql}`, [...params, ...updTw.params]);
 
       return successResponse({
         id: args.agreementId, agreementNumber: existing.rows[0].agreement_number,

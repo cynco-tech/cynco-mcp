@@ -112,10 +112,11 @@ export async function updateJournalEntryStatus(args: {
       paramIdx++;
 
       updateParams.push(args.journalEntryId);
+      const updTw = tenantWhere(tenant, paramIdx + 1);
 
       await client.query(
-        `UPDATE journal_entries SET ${updateFields.join(", ")} WHERE id = $${paramIdx}`,
-        updateParams,
+        `UPDATE journal_entries SET ${updateFields.join(", ")} WHERE id = $${paramIdx} AND ${updTw.sql}`,
+        [...updateParams, ...updTw.params],
       );
 
       // Record status history

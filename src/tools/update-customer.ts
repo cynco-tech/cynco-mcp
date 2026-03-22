@@ -91,10 +91,11 @@ export async function updateCustomer(args: {
 
       upd.fields.push(`updated_at = NOW()`);
       upd.values.push(args.customerId);
+      const updTw = tenantWhere(tenant, upd.paramIdx + 1);
 
       await client.query(
-        `UPDATE customers SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx}`,
-        upd.values,
+        `UPDATE customers SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx} AND ${updTw.sql}`,
+        [...upd.values, ...updTw.params],
       );
 
       const updated = await client.query(

@@ -61,9 +61,10 @@ export async function updateBillStatus(args: {
       }
 
       params.push(args.billId);
+      const updTw = tenantWhere(tenant, params.length + 1);
       await client.query(
-        `UPDATE bills SET ${updates.join(", ")} WHERE id = $${params.length}`,
-        params,
+        `UPDATE bills SET ${updates.join(", ")} WHERE id = $${params.length} AND ${updTw.sql}`,
+        [...params, ...updTw.params],
       );
 
       return successResponse({

@@ -35,7 +35,8 @@ export async function deleteTag(args: {
       }
 
       // Cascade delete removes entity_tags automatically (FK ON DELETE CASCADE)
-      await client.query(`DELETE FROM tags WHERE id = $1`, [args.tagId]);
+      const delTw = tenantWhere(tenant, 2);
+      await client.query(`DELETE FROM tags WHERE id = $1 AND ${delTw.sql}`, [args.tagId, ...delTw.params]);
 
       return successResponse({ id: args.tagId, name: existing.rows[0].name, deleted: true });
     });

@@ -255,13 +255,14 @@ export async function postBankTransactions(args: {
           );
         }
 
-        // Update bank transaction status
+        // Update bank transaction status (tenant filter for defense-in-depth)
+        const btTw = tenantWhere(tenant, 3);
         await client.query(
           `UPDATE bank_transactions
            SET status = 'posted', match_status = 'matched',
                matched_journal_entry_id = $1, updated_at = NOW()
-           WHERE id = $2`,
-          [jeId, txId],
+           WHERE id = $2 AND ${btTw.sql}`,
+          [jeId, txId, ...btTw.params],
         );
 
         posted.push({

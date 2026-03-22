@@ -49,6 +49,18 @@ export function registerResources(server: McpServer): void {
       text: SCOPES,
     }],
   }));
+
+  server.registerResource("presentation", "cynco://guide/presentation", {
+    title: "Data Presentation Guide",
+    description: "How to render Cynco financial data beautifully for users — formatting, layout, and visualization rules.",
+    mimeType: "text/markdown",
+  }, async () => ({
+    contents: [{
+      uri: "cynco://guide/presentation",
+      mimeType: "text/markdown",
+      text: PRESENTATION,
+    }],
+  }));
 }
 
 const GETTING_STARTED = `# Cynco MCP Server — Getting Started
@@ -94,6 +106,7 @@ Requires \`code:execute\` scope on the API key.
 - Use Code Mode (\`search_tools\` + \`execute_code\`) for multi-step workflows to save tokens
 - All write tools validate inputs and enforce status transition rules
 - Delete operations are soft-deletes (deactivate) — data is never destroyed
+- Read the \`cynco://guide/presentation\` resource for formatting rules — it teaches you how to render financial data beautifully for users
 `;
 
 const WORKFLOWS = `# Common Workflows
@@ -233,6 +246,130 @@ All amounts are stored in the tenant's base currency (typically MYR). Amounts us
 | cdn_ | Credit/Debit Note |
 | ritpl_ | Recurring Invoice Template |
 | bsch_ | Billing Schedule |
+`;
+
+const PRESENTATION = `# Data Presentation Guide
+
+When presenting Cynco financial data to users, follow these rules to ensure a polished, professional experience.
+
+## Core Principles
+1. **Never dump raw JSON** — always format data into clean tables, summaries, or structured reports
+2. **Lead with the headline** — start with the key number or insight, then show supporting detail
+3. **Use the right format for the data type** — don't force everything into tables
+
+## Number Formatting
+- **Currency**: Always include the currency symbol and 2 decimal places. Use locale-appropriate separators: \`RM 12,450.00\` not \`12450\`
+- **Percentages**: One decimal place with % sign: \`23.5%\` not \`0.235\`
+- **Counts**: Use commas for thousands: \`1,247\` not \`1247\`
+- **Negative amounts**: Use parentheses for accounting: \`(RM 500.00)\` not \`-RM 500.00\`
+- **Zero amounts**: Show as \`RM 0.00\` or \`—\` depending on context (use dash for "not applicable")
+
+## Color Coding (when the client supports it)
+- **Positive/favorable**: Green — revenue growth, assets, cash inflow, on-time payments
+- **Negative/unfavorable**: Red — losses, overdue amounts, cash outflow, declined items
+- **Neutral/informational**: Default text color — labels, descriptions, dates
+- **Warning**: Amber — approaching limits, expiring soon, pending review
+
+## Tool-Specific Presentation
+
+### Financial Summary (\`get_financial_summary\`)
+Present as a **dashboard with KPI tiles**:
+- Row 1: Total Revenue | Total Expenses | Net Income
+- Row 2: Cash Balance | AR Outstanding | AP Outstanding
+- Row 3: Draft JEs | Uncategorized Transactions | Open Period
+
+### Trial Balance (\`get_trial_balance\`)
+Present as a **two-column table** with account hierarchy:
+- Left: Account Code + Account Name (indented by hierarchy level)
+- Right: Debit | Credit columns, right-aligned
+- Footer: Total Debits | Total Credits (must balance)
+- Highlight if totals don't balance
+
+### Income Statement (\`get_income_statement\`)
+Present as a **structured financial report**, not a flat table:
+\`\`\`
+Revenue
+  Sales Revenue                    RM 125,000.00
+  Service Revenue                   RM 45,000.00
+  ─────────────────────────────────────────────
+  Total Revenue                    RM 170,000.00
+
+Expenses
+  Cost of Goods Sold               (RM 62,000.00)
+  Operating Expenses               (RM 43,000.00)
+  ─────────────────────────────────────────────
+  Total Expenses                   (RM 105,000.00)
+
+  ═════════════════════════════════════════════
+  Net Income                        RM 65,000.00
+\`\`\`
+
+### Balance Sheet (\`get_balance_sheet\`)
+Present as a **structured report with sections**:
+- Assets (Current → Non-Current → Total)
+- Liabilities (Current → Non-Current → Total)
+- Equity
+- Footer: A = L + E verification
+
+### Customer/Vendor Aging (\`get_customer_aging\`, \`get_vendor_aging\`)
+Present as a **table with aging buckets**:
+| Customer | Current | 1-30 | 31-60 | 61-90 | 90+ | Total |
+Right-align all amounts. Bold the Total column. Highlight 90+ in red.
+Include a summary row at the bottom with totals per bucket.
+
+### Invoice/Bill Lists (\`get_invoices\`, \`get_bills\`)
+Present as a **sortable table** with key columns:
+| # | Customer/Vendor | Date | Due Date | Amount | Paid | Outstanding | Status |
+Color-code status: draft=gray, finalized=blue, overdue=red, paid=green.
+
+### Cash Flow (\`get_cash_flow_summary\`)
+Present as a **monthly trend**:
+| Month | Inflows | Outflows | Net | Running Balance |
+If the client supports charts, suggest a line chart with inflows (green) and outflows (red).
+
+### Journal Entries (\`get_journal_entries\`)
+Present as a **ledger table**:
+| # | Date | Description | Debit | Credit | Status |
+Group lines by entry. Show balanced totals per entry.
+
+### Statements (\`get_customer_statement\`, \`get_vendor_statement\`)
+Present as a **running statement**:
+| Date | Description | Debit | Credit | Balance |
+Start with opening balance, end with closing balance.
+
+### Chart of Accounts (\`get_chart_of_accounts\`)
+Present as an **indented hierarchy** by parent_id:
+\`\`\`
+1000  Assets
+  1100  Current Assets
+    1110  Cash and Cash Equivalents
+    1120  Accounts Receivable
+  1200  Non-Current Assets
+    1210  Property, Plant & Equipment
+\`\`\`
+
+### General Ledger (\`get_general_ledger\`)
+Present as a **running ledger** with running balance:
+| Date | JE # | Description | Debit | Credit | Balance |
+
+## Empty States
+When a query returns no data, provide a helpful message:
+- "No invoices found for this period" — not "No data"
+- "No overdue receivables — all customers are current" — positive framing when appropriate
+- Suggest a next action when relevant: "No journal entries for March. Would you like to create one?"
+
+## Comparative Presentation
+When the user asks for trends or comparisons:
+- Always show the comparison period alongside the current period
+- Calculate and show the change (absolute and percentage)
+- Use ↑/↓ arrows or color to indicate direction
+- Example: \`Revenue: RM 170,000 ↑ 12.3% vs prior month\`
+
+## Summary Best Practices
+- Always state the **period** and **currency** at the top of any financial report
+- Round summary totals to nearest whole number if presenting KPI tiles
+- Include the **as-of date** for balance-based reports (balance sheet, aging)
+- When showing multiple reports, maintain consistent column widths and alignment
 `;
 
 const SCOPES = `# API Scopes Reference

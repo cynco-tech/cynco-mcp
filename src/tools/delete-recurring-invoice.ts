@@ -37,9 +37,10 @@ export async function deleteRecurringInvoice(args: {
         return errorResponse("Template is already cancelled.");
       }
 
+      const updTw = tenantWhere(tenant, 2);
       await client.query(
-        `UPDATE recurring_invoice_templates SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
-        [args.templateId],
+        `UPDATE recurring_invoice_templates SET status = 'cancelled', updated_at = NOW() WHERE id = $1 AND ${updTw.sql}`,
+        [args.templateId, ...updTw.params],
       );
 
       return successResponse({

@@ -37,11 +37,13 @@ export async function deleteVendor(args: {
         return errorResponse("Vendor is already inactive.");
       }
 
+      const billTw = tenantWhere(tenant, 2);
       const billCheck = await client.query(
         `SELECT COUNT(*) as cnt FROM bills
-         WHERE vendor_id = $1 AND status IN ('awaiting_payment', 'partially_paid', 'overdue', 'approved')
+         WHERE vendor_id = $1 AND ${billTw.sql}
+           AND status IN ('awaiting_payment', 'partially_paid', 'overdue', 'approved')
            AND is_archived = false`,
-        [args.vendorId],
+        [args.vendorId, ...billTw.params],
       );
       const outstanding = parseInt(billCheck.rows[0].cnt as string, 10);
       if (outstanding > 0) {
@@ -50,9 +52,10 @@ export async function deleteVendor(args: {
         );
       }
 
+      const updTw = tenantWhere(tenant, 2);
       await client.query(
-        `UPDATE vendors SET is_active = false, updated_at = NOW() WHERE id = $1`,
-        [args.vendorId],
+        `UPDATE vendors SET is_active = false, updated_at = NOW() WHERE id = $1 AND ${updTw.sql}`,
+        [args.vendorId, ...updTw.params],
       );
 
       return successResponse({

@@ -59,9 +59,10 @@ export async function updateRecurringInvoice(args: {
 
       upd.fields.push(`updated_at = NOW()`);
       upd.values.push(args.templateId);
+      const updTw = tenantWhere(tenant, upd.paramIdx + 1);
       await client.query(
-        `UPDATE recurring_invoice_templates SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx}`,
-        upd.values,
+        `UPDATE recurring_invoice_templates SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx} AND ${updTw.sql}`,
+        [...upd.values, ...updTw.params],
       );
 
       return successResponse({

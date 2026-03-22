@@ -49,7 +49,8 @@ export async function updateTag(args: {
 
       upd.fields.push(`updated_at = NOW()`);
       upd.values.push(args.tagId);
-      await client.query(`UPDATE tags SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx}`, upd.values);
+      const updTw = tenantWhere(tenant, upd.paramIdx + 1);
+      await client.query(`UPDATE tags SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx} AND ${updTw.sql}`, [...upd.values, ...updTw.params]);
 
       return successResponse({
         id: args.tagId,

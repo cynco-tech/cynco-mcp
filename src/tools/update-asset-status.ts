@@ -56,7 +56,8 @@ export async function updateAssetStatus(args: {
       }
 
       params.push(args.assetId);
-      await client.query(`UPDATE fixed_assets SET ${updates.join(", ")} WHERE id = $${paramIdx}`, params);
+      const updTw = tenantWhere(tenant, paramIdx + 1);
+      await client.query(`UPDATE fixed_assets SET ${updates.join(", ")} WHERE id = $${paramIdx} AND ${updTw.sql}`, [...params, ...updTw.params]);
 
       return successResponse({
         id: args.assetId, assetCode: existing.rows[0].asset_code, name: existing.rows[0].name,

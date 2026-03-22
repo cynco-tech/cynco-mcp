@@ -59,9 +59,10 @@ export async function updateQuotationStatus(args: {
       }
 
       params.push(args.quotationId);
+      const updTw = tenantWhere(tenant, paramIdx + 1);
       await client.query(
-        `UPDATE quotations SET ${updates.join(", ")} WHERE id = $${paramIdx}`,
-        params,
+        `UPDATE quotations SET ${updates.join(", ")} WHERE id = $${paramIdx} AND ${updTw.sql}`,
+        [...params, ...updTw.params],
       );
 
       return successResponse({

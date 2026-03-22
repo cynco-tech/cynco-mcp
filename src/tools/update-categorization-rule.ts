@@ -151,10 +151,11 @@ export async function updateCategorizationRule(args: {
       }
 
       setParams.push(args.ruleId);
+      const updTw = tenantWhere(tenant, paramIdx + 1);
 
       await client.query(
-        `UPDATE categorization_rules SET ${setClauses.join(", ")} WHERE id = $${paramIdx}`,
-        setParams,
+        `UPDATE categorization_rules SET ${setClauses.join(", ")} WHERE id = $${paramIdx} AND ${updTw.sql}`,
+        [...setParams, ...updTw.params],
       );
 
       return successResponse({

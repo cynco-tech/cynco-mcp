@@ -34,7 +34,8 @@ export async function deleteItem(args: {
         return errorResponse("Item not found or does not belong to this tenant.");
       }
 
-      await client.query(`DELETE FROM items WHERE id = $1`, [args.itemId]);
+      const delTw = tenantWhere(tenant, 2);
+      await client.query(`DELETE FROM items WHERE id = $1 AND ${delTw.sql}`, [args.itemId, ...delTw.params]);
 
       return successResponse({
         id: args.itemId,

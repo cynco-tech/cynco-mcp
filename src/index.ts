@@ -28,11 +28,13 @@ const startedAt = Date.now();
 // ── Static assets (loaded once at startup) ───────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
 let iconBuffer: Buffer | null = null;
+let iconLightBuffer: Buffer | null = null;
 try {
   iconBuffer = readFileSync(join(__dirname, "..", "assets", "icon.png"));
-} catch {
-  // Icon file missing — not fatal, /icon.png will 404
-}
+} catch { /* not fatal */ }
+try {
+  iconLightBuffer = readFileSync(join(__dirname, "..", "assets", "icon-light.png"));
+} catch { /* not fatal */ }
 
 // ── Transport selection ──────────────────────────────────────────
 // MCP_TRANSPORT=http  → Streamable HTTP on MCP_PORT (default 3100)
@@ -198,7 +200,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
-  // ── Icon (public, no auth) ──
+  // ── Icons (public, no auth) ──
   if (path === "/icon.png" && req.method === "GET") {
     if (iconBuffer) {
       res.writeHead(200, {
@@ -207,6 +209,19 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         "Cache-Control": "public, max-age=86400",
       });
       res.end(iconBuffer);
+    } else {
+      sendJson(res, 404, { error: "Icon not found" });
+    }
+    return;
+  }
+  if (path === "/icon-light.png" && req.method === "GET") {
+    if (iconLightBuffer) {
+      res.writeHead(200, {
+        "Content-Type": "image/png",
+        "Content-Length": iconLightBuffer.length,
+        "Cache-Control": "public, max-age=86400",
+      });
+      res.end(iconLightBuffer);
     } else {
       sendJson(res, 404, { error: "Icon not found" });
     }

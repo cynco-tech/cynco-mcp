@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
-describe("structuredContent and audience annotations", () => {
+describe("MCP spec-compliant tool responses", () => {
   afterEach(() => {
     vi.resetModules();
   });
@@ -10,7 +10,7 @@ describe("structuredContent and audience annotations", () => {
     return await import("../src/utils/validation.js");
   }
 
-  it("successResponse includes both content and structuredContent", async () => {
+  it("successResponse returns content array with text (no structuredContent per MCP spec)", async () => {
     const { successResponse } = await getValidation();
     const result = successResponse({ customers: [], count: 0 });
 
@@ -19,21 +19,19 @@ describe("structuredContent and audience annotations", () => {
     expect(result.content[0].type).toBe("text");
     expect(typeof result.content[0].text).toBe("string");
 
-    // structuredContent is the raw object
-    const sc = (result as Record<string, unknown>).structuredContent as Record<string, unknown>;
-    expect(sc).toBeDefined();
-    expect(sc.success).toBe(true);
-    expect(sc.data).toEqual({ customers: [], count: 0 });
+    // structuredContent must NOT be present (not in MCP spec CallToolResult)
+    const sc = (result as Record<string, unknown>).structuredContent;
+    expect(sc).toBeUndefined();
   });
 
-  it("successResponse text content is parseable JSON matching structuredContent", async () => {
+  it("successResponse text content is parseable JSON with success and data", async () => {
     const { successResponse } = await getValidation();
     const data = { id: "test_123", name: "Test" };
     const result = successResponse(data);
 
     const parsed = JSON.parse(result.content[0].text);
-    const sc = (result as Record<string, unknown>).structuredContent;
-    expect(parsed).toEqual(sc);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toEqual(data);
   });
 
   it("successResponse has audience ['user', 'assistant']", async () => {
@@ -45,14 +43,17 @@ describe("structuredContent and audience annotations", () => {
     expect(annotations.audience).toEqual(["user", "assistant"]);
   });
 
-  it("errorResponse includes structuredContent", async () => {
+  it("errorResponse does NOT include structuredContent (MCP spec compliance)", async () => {
     const { errorResponse } = await getValidation();
     const result = errorResponse("Something went wrong");
 
-    const sc = (result as Record<string, unknown>).structuredContent as Record<string, unknown>;
-    expect(sc).toBeDefined();
-    expect(sc.success).toBe(false);
-    expect(typeof sc.error).toBe("string");
+    const sc = (result as Record<string, unknown>).structuredContent;
+    expect(sc).toBeUndefined();
+
+    // Error should still be in the text content
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.success).toBe(false);
+    expect(typeof parsed.error).toBe("string");
   });
 
   it("errorResponse has audience ['assistant']", async () => {

@@ -13,8 +13,18 @@ export async function getTeamMembers(args: {
   try {
     const tenant = resolveTenant(args);
     // Users are linked via client_users or accounting_firm_users junction tables
-    const table = tenant.column === "client_id" ? "client_users" : "accounting_firm_users";
-    const fkCol = tenant.column;
+    // Whitelist allowed table/column values to prevent SQL injection
+    let table: string;
+    let fkCol: string;
+    if (tenant.column === "client_id") {
+      table = "client_users";
+      fkCol = "client_id";
+    } else if (tenant.column === "accounting_firm_id") {
+      table = "accounting_firm_users";
+      fkCol = "accounting_firm_id";
+    } else {
+      throw new Error(`Unexpected tenant column: ${tenant.column}`);
+    }
 
     const result = await query(
       `SELECT u.id, u.email, u.first_name, u.last_name, cu.role, cu.position,

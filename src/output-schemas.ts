@@ -34,11 +34,18 @@ export const companyProfileOutputSchema = {
 export const financialSummaryOutputSchema = {
   success: z.boolean(),
   data: z.object({
-    balances: z.unknown().optional(),
+    currentPeriod: z.string().optional(),
+    balancesByType: z.unknown().optional(),
     journalEntries: z.unknown().optional(),
     bankTransactions: z.unknown().optional(),
-    outstandingAR: z.number().nullable().optional(),
-    outstandingAP: z.number().nullable().optional(),
+    accountsReceivable: z.object({
+      outstandingInvoices: z.number().int(),
+      totalOutstanding: z.string(),
+    }).optional(),
+    accountsPayable: z.object({
+      outstandingBills: z.number().int(),
+      totalOutstanding: z.string(),
+    }).optional(),
   }).optional(),
   error: z.string().optional(),
 };
@@ -108,12 +115,12 @@ export const invoicesOutputSchema = {
   data: z.object({
     invoices: z.array(z.object({
       id: z.string(),
-      invoiceNumber: z.string().optional(),
+      invoiceNumber: z.string().nullable().optional(),
       status: z.string(),
-      totalAmount: z.string().optional(),
-      paidAmount: z.string().nullable().optional(),
-      customerName: z.string().optional(),
-      dueDate: z.string().nullable().optional(),
+      totalAmount: z.unknown().optional(),
+      paidAmount: z.unknown().optional(),
+      customerName: z.string().nullable().optional(),
+      dueDate: z.unknown().optional(),
     })),
     invoiceCount: z.number().int(),
     ...paginationShape,
@@ -186,29 +193,39 @@ export const trialBalanceOutputSchema = {
 export const incomeStatementOutputSchema = {
   success: z.boolean(),
   data: z.object({
-    period: z.string().optional(),
-    revenue: z.array(z.unknown()).optional(),
-    expenses: z.array(z.unknown()).optional(),
-    totalRevenue: z.string().optional(),
-    totalExpenses: z.string().optional(),
+    fromPeriod: z.string().optional(),
+    toPeriod: z.string().optional(),
+    revenue: z.object({
+      accounts: z.array(z.unknown()),
+      total: z.string(),
+    }).optional(),
+    expenses: z.object({
+      accounts: z.array(z.unknown()),
+      total: z.string(),
+    }).optional(),
     netIncome: z.string().optional(),
+    isProfit: z.boolean().optional(),
   }).optional(),
   error: z.string().optional(),
 };
 
 // ── Balance Sheet ────────────────────────────────────────────────
 
+const accountSectionShape = z.object({
+  accounts: z.array(z.unknown()),
+  total: z.string(),
+});
+
 export const balanceSheetOutputSchema = {
   success: z.boolean(),
   data: z.object({
-    period: z.string().optional(),
-    assets: z.array(z.unknown()).optional(),
-    liabilities: z.array(z.unknown()).optional(),
-    equity: z.array(z.unknown()).optional(),
-    totalAssets: z.string().optional(),
-    totalLiabilities: z.string().optional(),
-    totalEquity: z.string().optional(),
+    asOfPeriod: z.string().optional(),
+    assets: accountSectionShape.optional(),
+    liabilities: accountSectionShape.optional(),
+    equity: accountSectionShape.optional(),
+    totalLiabilitiesAndEquity: z.string().optional(),
     isBalanced: z.boolean().optional(),
+    balanceDifference: z.string().optional(),
   }).optional(),
   error: z.string().optional(),
 };

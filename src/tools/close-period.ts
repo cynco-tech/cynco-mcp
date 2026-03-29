@@ -8,6 +8,7 @@ import {
   successResponse,
   errorResponse,
 } from "../utils/validation.js";
+import { validateTenantUser } from "../utils/tools.js";
 
 export const closePeriodSchema = {
   clientId: z.string().optional().describe("Client ID (XOR with accountingFirmId)"),
@@ -27,13 +28,16 @@ export async function closePeriod(args: {
     validateTypeId(args.closedBy, "usr", "closedBy");
 
     return await withTransaction(async (client: pg.PoolClient) => {
-      // Validate user exists
-      const userResult = await client.query(
-        `SELECT id FROM users WHERE id = $1`,
-        [args.closedBy],
+      // Advisory lock on the period to serialize against concurrent JE creation
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1 || '-period-' || $2))`,
+        [tenant.value, args.period],
       );
-      if (userResult.rows.length === 0) {
-        return errorResponse(`User not found: ${args.closedBy}.`);
+
+      // Validate user exists and belongs to tenant
+      const userCheck = await validateTenantUser(client, args.closedBy, tenant, "closedBy");
+      if (!userCheck.valid) {
+        return errorResponse(userCheck.error);
       }
 
       // Lock all balance rows for this period to prevent concurrent close/reopen

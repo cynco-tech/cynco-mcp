@@ -9,15 +9,14 @@ import {
   successResponse,
   errorResponse,
 } from "../utils/validation.js";
-
 const lineSchema = z.object({
   accountId: z.string(),
-  debitAmount: z.number().min(0).default(0),
-  creditAmount: z.number().min(0).default(0),
+  debitAmount: z.number().min(0).finite().default(0),
+  creditAmount: z.number().min(0).finite().default(0),
   description: z.string().optional(),
-  taxAmount: z.number().optional(),
+  taxAmount: z.number().finite().optional(),
   taxCode: z.string().optional(),
-  taxRate: z.number().optional(),
+  taxRate: z.number().finite().optional(),
 });
 
 const entrySchema = z.object({
@@ -87,14 +86,15 @@ export async function createJournalEntries(args: {
     }[] = [];
     const errors: { index: number; error: string }[] = [];
 
-    // Pre-validate all createdBy user IDs in one query
+    // Pre-validate all createdBy user IDs belong to this tenant
     const uniqueUserIds = [
       ...new Set(args.entries.map((e) => e.createdBy)),
     ];
     {
+      const tw = tenantWhere(tenant, 2);
       const userResult = await query(
-        `SELECT id FROM users WHERE id = ANY($1)`,
-        [uniqueUserIds],
+        `SELECT id FROM users WHERE id = ANY($1) AND ${tw.sql}`,
+        [uniqueUserIds, ...tw.params],
       );
       const foundUserIds = new Set(
         userResult.rows.map((r) => r.id as string),
@@ -104,7 +104,7 @@ export async function createJournalEntries(args: {
       );
       if (missingUserIds.length > 0) {
         return errorResponse(
-          `User(s) not found: ${missingUserIds.join(", ")}. createdBy must reference a valid user ID.`,
+          `User(s) not found or do not belong to this tenant: ${missingUserIds.join(", ")}. createdBy must reference a valid user within your organization.`,
         );
       }
     }
@@ -172,6 +172,25 @@ export async function createJournalEntries(args: {
 
           const period = entry.entryDate.substring(0, 7);
 
+          // Advisory lock on the period — serializes against close_period
+          await client.query(
+            `SELECT pg_advisory_xact_lock(hashtext($1 || '-period-' || $2))`,
+            [tenant.value, period],
+          );
+
+          // Check if period is closed — reject new entries into closed periods
+          const periodTw = tenantWhere(tenant, 2, "ab");
+          const closedCheck = await client.query(
+            `SELECT COUNT(*) as closed FROM account_balances ab
+             WHERE ab.period = $1 AND ${periodTw.sql} AND ab.is_closed = true`,
+            [period, ...periodTw.params],
+          );
+          if (parseInt(closedCheck.rows[0].closed as string, 10) > 0) {
+            throw new Error(
+              `Period ${period} is closed. Reopen it before posting new journal entries.`,
+            );
+          }
+
           // Advisory lock for entry number generation
           // Matches remix/app/models/journalEntry.model.ts:176-232
           await client.query(
@@ -183,21 +202,16 @@ export async function createJournalEntries(args: {
           const year = new Date().getFullYear();
           const pattern = `${prefix}-${year}-%`;
 
+          // Use CAST to extract numeric suffix — avoids lexicographic MAX bug
+          // where "9999" > "10000" causes duplicate numbers after 9999 entries/year
           const maxResult = await client.query(
-            `SELECT MAX(entry_number) as max_number FROM journal_entries
+            `SELECT MAX(CAST(SUBSTRING(entry_number FROM '\\d+$') AS INTEGER)) as max_seq
+             FROM journal_entries
              WHERE coa_id = $1 AND entry_number LIKE $2`,
             [args.coaId, pattern],
           );
 
-          let nextSeq = 1;
-          if (maxResult.rows[0]?.max_number) {
-            const parts = (maxResult.rows[0].max_number as string).split("-");
-            const lastPart = parts[parts.length - 1];
-            const parsed = parseInt(lastPart, 10);
-            if (!isNaN(parsed)) {
-              nextSeq = parsed + 1;
-            }
-          }
+          const nextSeq = ((maxResult.rows[0]?.max_seq as number | null) ?? 0) + 1;
 
           const entryNumber = `${prefix}-${year}-${String(nextSeq).padStart(4, "0")}`;
 

@@ -164,6 +164,14 @@ export const TOOL_SCOPE_MAP: Record<string, ToolScope> = {
   // ── E-Invoice (Phase 4) ──
   get_einvoice_status: "admin:read",
 
+  // ── MCP Apps (interactive UIs) ──
+  show_dashboard: "reports:read",
+  show_aging_report: "reports:read",
+  show_cash_flow: "reports:read",
+  show_trial_balance: "reports:read",
+  show_financial_statements: "reports:read",
+  build_invoice: "invoicing:write",
+
   // ── SQL Mode ──
   search_schema: "query:execute",
   execute_query: "query:execute",
@@ -174,8 +182,17 @@ export const TOOL_SCOPE_MAP: Record<string, ToolScope> = {
 };
 
 /**
- * Get the required scope for a tool, falling back to "read" if not mapped.
+ * Get the required scope for a tool.
+ * Throws if the tool is not in the scope map — fail-closed to prevent
+ * unmapped tools from being silently accessible with read-only keys.
  */
 export function getToolScope(toolName: string): ToolScope {
-  return TOOL_SCOPE_MAP[toolName] ?? "read";
+  const scope = TOOL_SCOPE_MAP[toolName];
+  if (!scope) {
+    throw new Error(
+      `Tool "${toolName}" has no scope mapping in TOOL_SCOPE_MAP. ` +
+      `Add it before registering the tool.`,
+    );
+  }
+  return scope;
 }

@@ -11,9 +11,9 @@
  */
 
 import { parseArgs } from "node:util";
-import { randomUUID } from "node:crypto";
-import { generateApiKey, hashApiKey } from "../auth.js";
+import { generateApiKey } from "../auth.js";
 import { query, shutdown } from "../db.js";
+import { generateId } from "../utils/typeid.js";
 
 const { values } = parseArgs({
   options: {
@@ -52,7 +52,7 @@ async function main() {
   }
 
   const { rawKey, keyHash, keyPrefix } = generateApiKey();
-  const id = `mak_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  const id = generateId("mak");
 
   const expiresAt = expiresInDays
     ? new Date(Date.now() + expiresInDays * 86_400_000).toISOString()

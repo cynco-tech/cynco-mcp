@@ -9,6 +9,7 @@ const FORBIDDEN_PATTERNS = [
   /\bINTO\b/i,    // blocks SELECT INTO and INSERT INTO
   /\bUNION\b/i,   // prevents cross-tenant data access via UNION queries
   /\bOR\b/i,      // prevents $TENANT_FILTER OR TRUE bypass — use IN() instead
+  /\(\s*SELECT\b/i, // blocks subqueries — they bypass $TENANT_FILTER tenant isolation
   /;\s*\S/,        // multiple statements
   /--/,            // comments
   /\/\*/,          // block comments
@@ -65,8 +66,8 @@ describe("SQL safety validation", () => {
     expect(validateQuery("SELECT COUNT(*), SUM(amount) FROM invoices WHERE client_id = $1").valid).toBe(true);
   });
 
-  it("allows subqueries (without OR)", () => {
-    expect(validateQuery("SELECT * FROM invoices WHERE customer_id IN (SELECT id FROM customers WHERE name = 'Test')").valid).toBe(true);
+  it("blocks subqueries to prevent tenant isolation bypass", () => {
+    expect(validateQuery("SELECT * FROM invoices WHERE customer_id IN (SELECT id FROM customers WHERE name = 'Test')").valid).toBe(false);
   });
 
 

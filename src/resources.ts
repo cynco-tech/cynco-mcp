@@ -4,7 +4,7 @@ export function registerResources(server: McpServer): void {
   // ── Static guides ─────────────────────────────────────────────
   server.registerResource("getting-started", "cynco://guide/getting-started", {
     title: "Getting Started Guide",
-    description: "How to use the Cynco MCP server effectively — 105 tools across 15 modules.",
+    description: "How to use the Cynco MCP server effectively — 107 tools across 12 modules.",
     mimeType: "text/markdown",
   }, async () => ({
     contents: [{
@@ -50,6 +50,18 @@ export function registerResources(server: McpServer): void {
     }],
   }));
 
+  server.registerResource("tool-selection", "cynco://guide/tool-selection", {
+    title: "Tool Selection Guide",
+    description: "Which tool to use when — disambiguation hints, workflow sequences, and safety warnings organized by module.",
+    mimeType: "text/markdown",
+  }, async () => ({
+    contents: [{
+      uri: "cynco://guide/tool-selection",
+      mimeType: "text/markdown",
+      text: TOOL_SELECTION,
+    }],
+  }));
+
   server.registerResource("presentation", "cynco://guide/presentation", {
     title: "Data Presentation Guide",
     description: "How to render Cynco financial data beautifully for users — formatting, layout, and visualization rules.",
@@ -75,7 +87,7 @@ const GETTING_STARTED = `# Cynco MCP Server — Getting Started
 - **Double-entry accounting**: Every transaction has balanced debits and credits.
 - **Periods**: Accounting periods are formatted as \`YYYY-MM\`. Use \`get_period_status\` to check which periods are open/closed.
 
-## Tool Modules (105 tools)
+## Tool Modules (107 tools across 12 modules)
 | Module | Read Tools | Write Tools | Scope |
 |--------|-----------|-------------|-------|
 | **Accounting** | get_chart_of_accounts, search_accounts, get_account_balances, get_account_activity, get_financial_accounts, get_bank_transactions, search_bank_transactions, get_categorization_rules, get_journal_entries, search_journal_entries, get_journal_entry_templates, get_general_ledger, get_period_status, get_reconciliation_status, get_payments | create_bank_transactions, update_bank_transaction_status, post_bank_transactions, create/update_categorization_rule, create_journal_entries, update_journal_entry_status, create/apply_journal_entry_template, create/update_account, close/reopen_period, reconcile_accounts, record_payment | accounting:* |
@@ -106,7 +118,8 @@ Requires \`code:execute\` scope on the API key.
 - Use Code Mode (\`search_tools\` + \`execute_code\`) for multi-step workflows to save tokens
 - All write tools validate inputs and enforce status transition rules
 - Delete operations are soft-deletes (deactivate) — data is never destroyed
-- Read the \`cynco://guide/presentation\` resource for formatting rules — it teaches you how to render financial data beautifully for users
+- Read \`cynco://guide/tool-selection\` for disambiguation hints, workflow sequences, and safety warnings — it helps you pick the right tool when multiple tools seem similar
+- Read \`cynco://guide/presentation\` for formatting rules — it teaches you how to render financial data beautifully for users
 `;
 
 const WORKFLOWS = `# Common Workflows
@@ -370,6 +383,195 @@ When the user asks for trends or comparisons:
 - Round summary totals to nearest whole number if presenting KPI tiles
 - Include the **as-of date** for balance-based reports (balance sheet, aging)
 - When showing multiple reports, maintain consistent column widths and alignment
+`;
+
+const TOOL_SELECTION = `# Tool Selection Guide
+
+Read this guide to choose the right tool for each task. Tools are grouped by module.
+
+## Getting Started
+Always call \`get_company_profile\` first to understand the tenant. Follow with \`get_financial_summary\` for a financial overview before drilling into specific areas.
+
+## Accounting — Chart of Accounts
+
+**Disambiguation:**
+- \`get_chart_of_accounts\` — full COA tree (use compact=true to reduce size). Use when you need the hierarchy or multiple account IDs.
+- \`search_accounts\` — fuzzy search by name/code/keyword. Faster for finding a single account. Always prefer this before creating journal entries or categorization rules.
+- \`get_account_balances\` — period-based balance snapshots (opening, debit, credit, closing, YTD). NOT individual transactions.
+- \`get_account_activity\` — sub-ledger detail for ONE account: every GL posting with running balance. For drilling into a specific account.
+- \`get_general_ledger\` — full GL across ALL accounts. For cross-account audit or period review. For a single account, prefer \`get_account_activity\`.
+- \`create_account\` / \`update_account\` — manage COA accounts directly.
+
+## Accounting — Bank Transactions
+
+**Workflow: Import -> Categorize -> Post**
+1. \`get_financial_accounts\` — find the target bank/credit card account ID
+2. \`create_bank_transactions\` — import transactions (auto-deduplicates via SHA-256)
+3. \`get_bank_transactions\` — review imported transactions (filter by status)
+4. \`search_bank_transactions\` — find specific transactions by keyword
+5. \`update_bank_transaction_status\` — categorize (set suggestedCoaAccountId + status="categorized")
+6. \`post_bank_transactions\` — create double-entry journal entries from categorized transactions. **Confirm with user before posting.**
+
+**Disambiguation:**
+- \`get_bank_transactions\` — list/filter. \`search_bank_transactions\` — keyword search.
+- \`get_financial_accounts\` — bank/credit card accounts (institutions). \`get_chart_of_accounts\` — COA ledger accounts.
+
+## Accounting — Categorization Rules
+
+- \`get_categorization_rules\` — list auto-categorization rules
+- \`create_categorization_rule\` — create a pattern-matching rule for recurring transactions. Find the COA account first via \`search_accounts\`.
+- \`update_categorization_rule\` — modify or deactivate (isActive=false) an existing rule.
+
+## Accounting — Journal Entries
+
+**Workflow: Create -> Post -> Approve**
+1. \`search_accounts\` — find account IDs for debit/credit lines
+2. \`create_journal_entries\` — create draft entries (debits must equal credits)
+3. \`update_journal_entry_status\` — transition: draft->posted->approved. **Voiding is irreversible — always confirm with user.**
+
+**Disambiguation:**
+- \`get_journal_entries\` — list/filter entries. \`search_journal_entries\` — keyword search entries.
+- \`create_journal_entries\` — manual entries. \`post_bank_transactions\` — auto-creates entries from categorized bank transactions.
+
+## Accounting — Journal Entry Templates
+
+- \`get_journal_entry_templates\` — list reusable templates (rent, depreciation, payroll)
+- \`create_journal_entry_template\` — create template for recurring entries
+- \`apply_journal_entry_template\` — execute a template to create a draft entry for a specific date. Post it afterward with \`update_journal_entry_status\`.
+
+## Accounting — Period Management
+
+**Workflow: Month-End Close**
+1. \`get_period_status\` — check which periods are open/ready
+2. \`get_journal_entries\` (status=draft) — ensure no drafts remain
+3. \`get_reconciliation_status\` — verify reconciliation progress
+4. \`get_trial_balance\` — verify debits = credits
+5. \`close_period\` — lock the period. **Warn user if draft JEs exist. Always confirm.**
+6. \`reopen_period\` — unlock a closed period for corrections. Cannot reopen if a later period is closed.
+
+## Accounting — Reconciliation
+
+- \`get_reconciliation_status\` — summary of reconciled vs unreconciled GL entries per account
+- \`reconcile_accounts\` — mark GL entries as reconciled. Find unreconciled entries first via \`get_general_ledger\` (isReconciled=false). **Confirm entries with user.**
+
+## Reports
+
+**Disambiguation:**
+- \`get_financial_summary\` — dashboard KPIs (totals by type, JE counts, AR/AP outstanding). Start here for an overview.
+- \`get_trial_balance\` — debit/credit verification report. For period-end checks.
+- \`get_income_statement\` — P&L: revenue minus expenses = net income. For profitability analysis.
+- \`get_balance_sheet\` — assets, liabilities, equity snapshot. For financial position.
+- \`get_cash_flow_summary\` — monthly inflows/outflows from bank transactions. For cash trend analysis.
+
+These are read-only. None of these modify data.
+
+## Customers & Accounts Receivable
+
+**Disambiguation:**
+- \`get_customers\` — list customers with balances and payment terms. Use to find a customerId.
+- \`get_customer_statement\` — full statement for ONE customer: invoices, payments, credits, running balance.
+- \`get_customer_aging\` — AR aging by CUSTOMER: totals in current/30/60/90/90+ buckets.
+- \`get_invoice_aging_detail\` — AR aging by INVOICE: each outstanding invoice with days past due. More granular than customer aging.
+
+**CRUD:** \`create_customer\`, \`update_customer\`, \`delete_customer\` (soft-delete, fails if outstanding invoices).
+
+## Invoicing
+
+**Workflow: Quote -> Invoice -> Payment**
+1. \`get_customers\` — find or create customer
+2. \`create_quotation\` -> \`update_quotation_status\` (draft->sent->accepted->converted)
+3. \`create_invoice\` — creates draft. Needs customerId and line items. **Confirm with user.**
+4. \`update_invoice_status\` — finalize, mark paid, or void. **Voiding is irreversible.**
+5. \`record_payment\` — record payment received
+6. \`update_invoice_status\` (->paid) — mark as paid after full payment
+
+**Disambiguation:**
+- \`get_invoices\` — list/filter invoices. \`get_credit_debit_notes\` — adjustments to invoiced amounts.
+- \`get_quotations\` — proposals/quotes. \`get_recurring_invoices\` — automated invoice templates.
+- \`create_credit_debit_note\` — credit note reduces amount owed, debit note increases it.
+
+**Items:** \`get_items\`, \`create_item\`, \`update_item\`, \`delete_item\` — reusable line items for invoices/quotations/bills.
+
+**Recurring:** \`get_recurring_invoices\`, \`create_recurring_invoice\`, \`update_recurring_invoice\`, \`delete_recurring_invoice\` (soft-cancel).
+
+## Vendors & Accounts Payable
+
+**Disambiguation:**
+- \`get_vendors\` — list vendors with payment details. Use to find a vendorId.
+- \`get_vendor_statement\` — full statement for ONE vendor: bills, payments, outstanding.
+- \`get_vendor_aging\` — AP aging by vendor: totals in current/30/60/90/90+ buckets.
+
+**CRUD:** \`create_vendor\`, \`update_vendor\`, \`delete_vendor\` (soft-delete, fails if outstanding bills).
+
+## Bills & Purchase Orders
+
+**Workflow: PO -> Bill -> Payment**
+1. \`create_purchase_order\` -> \`update_purchase_order_status\` (draft->approved->received)
+2. \`create_bill\` — record vendor invoice. Needs vendorId and line items.
+3. \`update_bill_status\` — advance through approval workflow.
+4. \`record_payment\` — record payment to vendor.
+
+**Disambiguation:**
+- \`get_bills\` — vendor invoices/payables. \`get_purchase_orders\` — procurement orders.
+- Bills are what you OWE, invoices are what you're OWED.
+
+## Payments
+
+- \`get_payments\` — list all inbound (customer) and outbound (vendor) payments.
+- \`record_payment\` — record a new payment. Links to invoice or bill. **Confirm amount and entity with user.**
+
+## Tags
+
+- \`get_tags\` — list organizational tags with usage counts.
+- \`create_tag\`, \`update_tag\`, \`delete_tag\` — manage tags. Delete removes all entity assignments.
+- \`assign_tag\` — attach a tag to a customer, vendor, invoice, bill, quotation, or PO.
+
+## Agreements
+
+**Workflow:** \`get_contract_templates\` -> \`create_agreement\` -> \`update_agreement_status\` (draft->sent->signing->executed->active) -> \`create_billing_schedule\`
+
+- \`get_agreements\` — list with status/type filters. \`get_agreement_detail\` — single agreement with signers and versions.
+- \`get_clauses\` — reusable clause library. \`get_contract_templates\` — templates for new agreements.
+- \`get_billing_schedules\` / \`create_billing_schedule\` — milestone-based billing linked to agreements.
+
+## Data Room
+
+- \`get_dataroom_folders\` — folder hierarchy (metadata only, no downloads).
+- \`get_dataroom_files\` — file list with folder/search filters (metadata only).
+- \`get_dataroom_file_detail\` — single file with versions and access info.
+- \`search_dataroom\` — search by name, description, or type.
+- \`get_dataroom_activity\` — audit trail: uploads, downloads, folder changes.
+- \`create_dataroom_folder\` — create a new folder.
+
+## Fixed Assets
+
+**Workflow:** \`get_asset_categories\` -> \`create_fixed_asset\` -> \`update_asset_status\` (draft->active) -> \`get_depreciation_schedule\`
+
+- \`get_fixed_assets\` — list with status/category filters. \`get_asset_detail\` — single asset with depreciation and capital allowance.
+- \`get_asset_categories\` — categories with depreciation defaults.
+- \`get_depreciation_schedule\` — depreciation entries for an asset or period.
+- \`get_asset_summary\` — register summary by category and status.
+
+## Admin (Read-Only)
+
+- \`get_team_members\` — users with roles and status.
+- \`get_staff_invitations\` — pending/accepted/expired invitations.
+- \`get_organization_link_requests\` — pending org link requests.
+- \`get_audit_trail\` — cross-module audit log with filters.
+- \`get_entity_history\` — change history for a specific entity.
+- \`get_einvoice_status\` — e-invoice credential status and submission stats.
+
+## SQL Mode (Advanced)
+
+For queries the typed tools cannot answer. Requires \`query:execute\` scope.
+1. \`search_schema\` — **always call first** to discover tables and columns. Never guess schema.
+2. \`execute_query\` — read-only SELECT with \`$TENANT_FILTER\` auto-injected. No CTEs, no OR (use IN), no UNION. Max 200 rows. **Show query to user before executing.**
+
+## Code Mode (Programmable)
+
+For multi-step workflows in a single round-trip. Requires \`code:execute\` scope.
+1. \`search_tools\` — discover tools and get TypeScript signatures.
+2. \`execute_code\` — run JavaScript calling \`cynco.*\` in a sandboxed environment. 60s timeout, 50 calls max.
 `;
 
 const SCOPES = `# API Scopes Reference

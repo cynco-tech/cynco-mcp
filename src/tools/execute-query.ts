@@ -41,6 +41,7 @@ const FORBIDDEN_PATTERNS = [
   /\bINTO\b/i,    // blocks SELECT INTO and INSERT INTO
   /\bUNION\b/i,   // prevents cross-tenant data access via UNION queries
   /\bOR\b/i,      // prevents $TENANT_FILTER OR TRUE bypass — use IN() instead
+  /\(\s*SELECT\b/i, // blocks subqueries — they bypass $TENANT_FILTER tenant isolation
   /;\s*\S/,        // multiple statements
   /--/,            // comments (potential injection vector)
   /\/\*/,          // block comments
@@ -52,7 +53,7 @@ function validateQuery(sql: string): { valid: boolean; error?: string } {
   // Must start with SELECT — CTEs (WITH) are not allowed to prevent
   // hiding $TENANT_FILTER in an unused CTE and bypassing tenant isolation
   if (!/^\s*SELECT\b/i.test(trimmed)) {
-    return { valid: false, error: "Only SELECT queries are allowed. Query must start with SELECT. CTEs (WITH) are not supported — use subqueries or the typed tools instead." };
+    return { valid: false, error: "Only SELECT queries are allowed. Query must start with SELECT. CTEs (WITH) and subqueries are not supported — use JOINs or the typed tools instead." };
   }
 
   // Check forbidden patterns
@@ -85,7 +86,7 @@ export const executeQuerySchema = {
   accountingFirmId: z.string().optional().describe("Accounting firm ID (XOR with clientId)"),
   sql: z.string().min(10).max(4000).describe(
     `Read-only SQL SELECT query. IMPORTANT rules:
-- Only SELECT allowed. No INSERT, UPDATE, DELETE, UNION, OR, or WITH (CTE).
+- Only SELECT allowed. No INSERT, UPDATE, DELETE, UNION, OR, WITH (CTE), or subqueries.
 - Must include $TENANT_FILTER as the FIRST condition after WHERE — replaced with the correct tenant filter.
 - $TENANT_FILTER must appear exactly once and be uppercase.
 - Use IN() instead of OR for multiple conditions.

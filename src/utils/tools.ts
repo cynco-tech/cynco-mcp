@@ -18,9 +18,9 @@ export const tenantSchema = {
 /** Standard line item schema for invoices, bills, quotations, POs, etc. */
 export const lineItemSchema = z.object({
   description: z.string(),
-  quantity: z.number().min(0),
-  unitPrice: z.number(),
-  taxRate: z.number().optional(),
+  quantity: z.number().min(0).finite(),
+  unitPrice: z.number().finite(),
+  taxRate: z.number().min(0).finite().optional(),
   taxCode: z.string().optional(),
 });
 
@@ -91,18 +91,16 @@ export async function generateSequenceNumber(
   const pattern = `${prefix}-${year}-%`;
   const tw = tenantWhere(tenant, 1);
 
+  // Use CAST to extract the numeric suffix — avoids lexicographic MAX bug
+  // where "9999" > "10000" would cause duplicate numbers after 9999 entries
   const maxResult = await client.query(
-    `SELECT MAX(${column}) as max_num FROM ${table}
+    `SELECT MAX(CAST(SUBSTRING(${column} FROM '\\d+$') AS INTEGER)) as max_seq
+     FROM ${table}
      WHERE ${tw.sql} AND ${column} LIKE $${tw.nextParam}`,
     [...tw.params, pattern],
   );
 
-  let nextSeq = 1;
-  if (maxResult.rows[0]?.max_num) {
-    const parts = (maxResult.rows[0].max_num as string).split("-");
-    const parsed = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(parsed)) nextSeq = parsed + 1;
-  }
+  const nextSeq = ((maxResult.rows[0]?.max_seq as number | null) ?? 0) + 1;
 
   return `${prefix}-${year}-${String(nextSeq).padStart(padWidth, "0")}`;
 }
@@ -133,6 +131,52 @@ export function buildUpdateSet(startParam = 1): UpdateBuilder {
       }
     },
   };
+}
+
+// ── User validation (tenant-scoped) ──────────────────────────────
+
+/**
+ * Validate that a user exists and belongs to the given tenant.
+ * Users have client_id / accounting_firm_id columns for tenant scoping.
+ * Returns the user ID if valid, or an error message if not found.
+ */
+export async function validateTenantUser(
+  client: pg.PoolClient,
+  userId: string,
+  tenant: Tenant,
+  fieldName = "createdBy",
+): Promise<{ valid: true } | { valid: false; error: string }> {
+  const tw = tenantWhere(tenant, 2);
+  const result = await client.query(
+    `SELECT id FROM users WHERE id = $1 AND ${tw.sql}`,
+    [userId, ...tw.params],
+  );
+  if (result.rows.length === 0) {
+    return {
+      valid: false,
+      error: `User not found or does not belong to this tenant: ${userId}. ${fieldName} must reference a valid user within your organization.`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Validate multiple user IDs belong to the given tenant (batch version).
+ * Returns missing IDs or empty array if all valid.
+ */
+export async function validateTenantUsers(
+  client: pg.PoolClient,
+  userIds: string[],
+  tenant: Tenant,
+): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const tw = tenantWhere(tenant, 2);
+  const result = await client.query(
+    `SELECT id FROM users WHERE id = ANY($1) AND ${tw.sql}`,
+    [userIds, ...tw.params],
+  );
+  const found = new Set(result.rows.map((r) => r.id as string));
+  return userIds.filter((id) => !found.has(id));
 }
 
 // ── Status transition validation ─────────────────────────────────

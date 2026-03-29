@@ -61,8 +61,15 @@ export async function updateAccount(args: {
 
       upd.fields.push(`updated_at = NOW()`);
       upd.values.push(args.accountId);
-      const updTw = tenantWhere(tenant, upd.paramIdx + 1);
-      await client.query(`UPDATE accounts SET ${upd.fields.join(", ")} WHERE id = $${upd.paramIdx} AND ${updTw.sql}`, [...upd.values, ...updTw.params]);
+      // Defense-in-depth: re-verify tenant ownership in the UPDATE WHERE clause
+      // via the COA join (accounts don't have direct tenant columns)
+      const updTw = tenantWhere(tenant, upd.paramIdx + 1, "c");
+      await client.query(
+        `UPDATE accounts SET ${upd.fields.join(", ")}
+         FROM chart_of_accounts c
+         WHERE accounts.id = $${upd.paramIdx} AND accounts.coa_id = c.id AND ${updTw.sql}`,
+        [...upd.values, ...updTw.params],
+      );
 
       return successResponse({
         id: args.accountId,

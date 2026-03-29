@@ -25,7 +25,7 @@ export function zodToTypeScript(schema: z.ZodTypeAny, depth = 0): string {
 
   // Unwrap ZodNullable
   if (def.typeName === "ZodNullable") {
-    return `${zodToTypeScript(def.innerType as z.ZodTypeAny)} | null`;
+    return `${zodToTypeScript(def.innerType as z.ZodTypeAny, depth + 1)} | null`;
   }
 
   // Primitives

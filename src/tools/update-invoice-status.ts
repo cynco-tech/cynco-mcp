@@ -8,6 +8,7 @@ import {
   successResponse,
   errorResponse,
 } from "../utils/validation.js";
+import { validateTenantUser } from "../utils/tools.js";
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   draft: ["finalized", "void"],
@@ -41,15 +42,10 @@ export async function updateInvoiceStatus(args: {
     validateTypeId(args.updatedBy, "usr", "updatedBy");
 
     return await withTransaction(async (client: pg.PoolClient) => {
-      // Verify user exists
-      const userResult = await client.query(
-        `SELECT id FROM users WHERE id = $1`,
-        [args.updatedBy],
-      );
-      if (userResult.rows.length === 0) {
-        return errorResponse(
-          `User not found: ${args.updatedBy}. updatedBy must reference a valid user ID.`,
-        );
+      // Verify user exists and belongs to tenant
+      const userCheck = await validateTenantUser(client, args.updatedBy, tenant, "updatedBy");
+      if (!userCheck.valid) {
+        return errorResponse(userCheck.error);
       }
 
       // Fetch and lock current invoice with tenant scope (FOR UPDATE prevents concurrent status changes)

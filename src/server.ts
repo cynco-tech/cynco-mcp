@@ -4,28 +4,17 @@ import type { Tenant, TenantArgs } from "./utils/validation.js";
 import { errorResponse } from "./utils/validation.js";
 import { registerPrompts } from "./prompts.js";
 import { registerResources } from "./resources.js";
+import { registerApps } from "./apps.js";
 import { log } from "./logger.js";
 import type { ApiKeyRecord, ToolScope } from "./auth.js";
 import { checkScope } from "./auth.js";
 import { getToolScope } from "./scope-map.js";
 import { recordToolExecution } from "./metrics.js";
-import {
-  companyProfileOutputSchema,
-  financialSummaryOutputSchema,
-  chartOfAccountsOutputSchema,
-  customersOutputSchema,
-  vendorsOutputSchema,
-  invoicesOutputSchema,
-  bankTransactionsOutputSchema,
-  journalEntriesOutputSchema,
-  trialBalanceOutputSchema,
-  incomeStatementOutputSchema,
-  balanceSheetOutputSchema,
-  accountBalancesOutputSchema,
-  searchAccountsOutputSchema,
-  createInvoiceOutputSchema,
-  cashFlowSummaryOutputSchema,
-} from "./output-schemas.js";
+// outputSchema + structuredContent removed for MCP spec compliance.
+// The official schema.ts (2025-03-26) does not define outputSchema on Tool
+// or structuredContent on CallToolResult. Claude.ai rejects responses
+// containing these non-standard fields with "Error occurred during tool execution".
+// See: https://github.com/modelcontextprotocol/specification/blob/main/schema/2025-03-26/schema.ts
 
 // ── Existing tools ──────────────────────────────────────────────
 import { getChartOfAccountsSchema, getChartOfAccounts } from "./tools/get-chart-of-accounts.js";
@@ -306,41 +295,15 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
   server.registerTool("get_company_profile", {
     title: "Get Company Profile",
-    description: `**Purpose:** Get the full business profile for the authenticated tenant.
-
-**IMPORTANT:** Call this tool FIRST in any new conversation to understand who you are working with.
-
-**Returns:** For clients: company name, registration number, address, entity type, industry, fiscal year, currency, jurisdiction, business context, charts of accounts, and managing accounting firm. For accounting firms: firm details, credentials, and list of managed clients.
-
-**When to use:**
-- Starting a new conversation — always call this first
-- User asks "who am I?", "what company is this?", "show me the business details"
-- You need the fiscal year, currency, or industry context
-
-**Key trigger phrases:** "company profile", "business details", "who am I", "what company"`,
+    description: "Get the full business profile for the authenticated tenant. Call this first in any new conversation.",
     inputSchema: s(getCompanyProfileSchema),
-    outputSchema: companyProfileOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_company_profile", getCompanyProfile));
 
   server.registerTool("get_financial_summary", {
     title: "Get Financial Summary",
-    description: `**Purpose:** Dashboard-style financial overview — the bird's-eye view of a tenant's financial position.
-
-**Returns:** Account balances grouped by type (asset, liability, equity, revenue, expense), journal entry counts by status, bank transaction counts by status, outstanding AR and AP totals.
-
-**When to use:**
-- As the second call after get_company_profile — to understand the financial landscape
-- User asks "how are we doing?", "give me an overview", "financial snapshot"
-- You need to decide which area to drill into next
-
-**NOT for:** Detailed account-level data (use get_account_balances or get_account_activity). Not for specific reports (use get_income_statement, get_balance_sheet, etc.).
-
-**Workflow:** get_company_profile → get_financial_summary → drill into specific areas
-
-**Key trigger phrases:** "financial overview", "dashboard", "how are we doing", "summary"`,
+    description: "Dashboard-style financial overview: account balance totals by type, JE/transaction counts, and AR/AP outstanding.",
     inputSchema: s(getFinancialSummarySchema),
-    outputSchema: financialSummaryOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_financial_summary", getFinancialSummary));
 
@@ -348,41 +311,15 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
   server.registerTool("get_chart_of_accounts", {
     title: "Get Chart of Accounts",
-    description: `**Purpose:** Get the active Chart of Accounts (COA) and its accounts for a tenant.
-
-**Returns:** COA metadata + account list with codes, types, hierarchy, normal balance direction, and AI mapping hints.
-
-**When to use:**
-- You need account IDs for journal entries, categorization, or any tool that requires an accountId
-- User asks "show me the chart of accounts", "what accounts do we have?"
-- Before creating journal entries — to find the right accounts
-
-**NOT for:** Finding a specific account by name (use search_accounts — it's faster and fuzzy). Not for account balances (use get_account_balances).
-
-**Tips:** Use compact=true to reduce response size. Use accountType to filter (e.g. "expense").
-
-**Key trigger phrases:** "chart of accounts", "COA", "account list", "what accounts"`,
+    description: "Get the active Chart of Accounts with account codes, types, hierarchy, and AI mapping hints. Use compact=true to reduce size.",
     inputSchema: s(getChartOfAccountsSchema),
-    outputSchema: chartOfAccountsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_chart_of_accounts", getChartOfAccounts));
 
   server.registerTool("search_accounts", {
     title: "Search Accounts",
-    description: `**Purpose:** Fuzzy search for COA accounts by name, code, description, or AI mapping keywords.
-
-**Returns:** Matched accounts ranked by relevance: exact code match > name starts with > name contains > description/keywords.
-
-**When to use:**
-- You need to find a specific account ID for categorization or journal entries
-- User says "which account for rent?", "find the utilities account"
-- Before create_journal_entries or create_categorization_rule — to find the right account
-
-**NOT for:** Getting the full COA (use get_chart_of_accounts). Not for account balances (use get_account_balances).
-
-**Key trigger phrases:** "find account", "which account for", "search accounts"`,
+    description: "Fuzzy search for COA accounts by name, code, or keyword. Use this to find account IDs before creating journal entries.",
     inputSchema: s(searchAccountsSchema),
-    outputSchema: searchAccountsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("search_accounts", searchAccounts));
 
@@ -390,37 +327,14 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
   server.registerTool("get_account_balances", {
     title: "Get Account Balances",
-    description: `**Purpose:** Get period-based account balance snapshots with opening, debit, credit, closing, and YTD totals.
-
-**Returns:** Balance records per account per period, including movements and closing status.
-
-**When to use:**
-- User asks "what's the balance of account X?", "show me this month's balances"
-- Before close_period — to verify balances are correct
-- Checking period movements or YTD totals
-
-**NOT for:** Detailed transaction-level activity (use get_account_activity). Not for Trial Balance format (use get_trial_balance).
-
-**Key trigger phrases:** "account balance", "balance for", "period balances", "YTD"`,
+    description: "Period-based account balance snapshots with opening, debit, credit, closing, and YTD totals.",
     inputSchema: s(getAccountBalancesSchema),
-    outputSchema: accountBalancesOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_account_balances", getAccountBalances));
 
   server.registerTool("get_account_activity", {
     title: "Get Account Activity",
-    description: `**Purpose:** Detailed sub-ledger for a single account — every GL posting with a running balance.
-
-**Returns:** GL postings with dates, amounts, journal entry references, descriptions, and reconciliation status.
-
-**When to use:**
-- User asks "show me all transactions in account X", "what happened in the bank account?"
-- Drilling into a specific account to understand movements
-- Verifying individual postings or investigating discrepancies
-
-**NOT for:** Summary balances (use get_account_balances). Not for the full general ledger (use get_general_ledger).
-
-**Key trigger phrases:** "account activity", "transactions in account", "sub-ledger", "account detail"`,
+    description: "Detailed sub-ledger for a single account: every GL posting with running balance.",
     inputSchema: s(getAccountActivitySchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_account_activity", getAccountActivity));
@@ -429,18 +343,7 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
   server.registerTool("get_financial_accounts", {
     title: "Get Financial Accounts",
-    description: `**Purpose:** Get bank accounts, credit cards, and other financial accounts for a tenant.
-
-**Returns:** Account details, linked COA accounts, institution info, and current balances.
-
-**When to use:**
-- You need a financialAccountId for create_bank_transactions
-- User asks "what bank accounts do we have?", "show me our accounts"
-- Before importing bank transactions — to find the right target account
-
-**NOT for:** COA accounts (use get_chart_of_accounts). Not for bank transactions (use get_bank_transactions).
-
-**Key trigger phrases:** "bank accounts", "financial accounts", "which account to import into"`,
+    description: "List bank accounts, credit cards, and other financial accounts with institution info and balances.",
     inputSchema: s(getFinancialAccountsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_financial_accounts", getFinancialAccounts));
@@ -449,103 +352,35 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
   server.registerTool("get_bank_transactions", {
     title: "List Bank Transactions",
-    description: `**Purpose:** List bank transactions for a tenant with filtering and pagination.
-
-**Returns:** Transactions with dates, amounts, descriptions, categorization status, and GL links.
-
-**When to use:**
-- User asks "show me recent transactions", "what came in this month?"
-- Reviewing imported transactions, checking categorization status
-- After create_bank_transactions — to verify the import
-
-**NOT for:** Searching by keyword (use search_bank_transactions). Not for importing (use create_bank_transactions). Not for cash flow analysis (use get_cash_flow_summary).
-
-**Key trigger phrases:** "bank transactions", "recent transactions", "show transactions"`,
+    description: "List bank transactions with filtering by status, date, and financial account.",
     inputSchema: s(getBankTransactionsSchema),
-    outputSchema: bankTransactionsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_bank_transactions", getBankTransactions));
 
   server.registerTool("search_bank_transactions", {
     title: "Search Bank Transactions",
-    description: `**Purpose:** Search bank transactions by description, payee, category, or reference number.
-
-**Returns:** Matching transactions with relevance ranking, amounts, and status.
-
-**When to use:**
-- User asks "find the payment to X", "search for transactions matching Y"
-- Looking for a specific transaction by keyword
-
-**NOT for:** Listing all transactions (use get_bank_transactions). Not for categorization (use update_bank_transaction_status).
-
-**Key trigger phrases:** "find transaction", "search transactions", "payment to"`,
+    description: "Search bank transactions by description, payee, category, or reference number.",
     inputSchema: s(searchBankTransactionsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("search_bank_transactions", searchBankTransactions));
 
   server.registerTool("create_bank_transactions", {
     title: "Import Bank Transactions",
-    description: `**Purpose:** Import bank transactions into a financial account from CSV or bank API data.
-
-**Returns:** Import summary with created count, duplicate count (auto-deduped via SHA-256), and any errors.
-
-**Before using this tool:**
-1. Get a valid financialAccountId from get_financial_accounts
-2. Confirm the target account with the user
-
-**When to use:**
-- User provides bank statement data or CSV to import
-- User says "import these transactions", "add bank data"
-
-**NOT for:** Creating journal entries (use create_journal_entries). Not for recording payments (use record_payment).
-
-**Workflow:** get_financial_accounts → confirm account → create_bank_transactions → get_bank_transactions to verify
-
-**Key trigger phrases:** "import transactions", "upload bank statement", "add bank data"`,
+    description: "Import bank transactions into a financial account. Auto-deduplicates via SHA-256. Requires a financialAccountId from get_financial_accounts.",
     inputSchema: s(createBankTransactionsSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("create_bank_transactions", createBankTransactions));
 
   server.registerTool("update_bank_transaction_status", {
     title: "Update Bank Transaction Status",
-    description: `**Purpose:** Bulk-update bank transaction status, match status, or linked journal/GL entries.
-
-**Returns:** Update results per transaction.
-
-**When to use:**
-- Categorizing transactions (setting suggestedCoaAccountId + status to "categorized")
-- Marking transactions as matched or reconciled
-- Linking transactions to existing journal entries
-
-**NOT for:** Posting to GL (use post_bank_transactions after categorization). Not for importing (use create_bank_transactions).
-
-**Workflow:** get_bank_transactions → categorize with this tool → post_bank_transactions
-
-**Key trigger phrases:** "categorize transaction", "update transaction status", "mark as matched"`,
+    description: "Bulk-update bank transaction status, categorization, or linked journal entries.",
     inputSchema: s(updateBankTransactionStatusSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("update_bank_transaction_status", updateBankTransactionStatus));
 
   server.registerTool("post_bank_transactions", {
     title: "Post Bank Transactions to GL",
-    description: `**Purpose:** Post categorized bank transactions to the General Ledger, creating double-entry journal entries.
-
-**Before using this tool, you MUST:**
-1. Verify transactions are categorized (status = "categorized" with a suggestedCoaAccountId)
-2. Confirm the number of transactions to be posted with the user
-3. Warn: "This will create journal entries for N transactions. Proceed?"
-
-**Returns:** Created journal entries with entry numbers and GL posting details.
-
-**When to use:**
-- After categorizing bank transactions — this is the next step
-- User says "post these to the GL", "create entries from bank transactions"
-
-**NOT for:** Categorizing transactions (use update_bank_transaction_status first). Not for manual journal entries (use create_journal_entries).
-
-**Workflow:** get_bank_transactions → update_bank_transaction_status (categorize) → confirm with user → post_bank_transactions
-
-**Key trigger phrases:** "post to GL", "post transactions", "create entries from transactions"`,
+    description: "Post categorized bank transactions to the General Ledger, creating double-entry journal entries. Confirm with user before posting.",
     inputSchema: s(postBankTransactionsSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("post_bank_transactions", postBankTransactions));
@@ -554,55 +389,21 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
   server.registerTool("get_categorization_rules", {
     title: "Get Categorization Rules",
-    description: `**Purpose:** List bank transaction categorization rules — pattern-matching rules that auto-categorize imported transactions.
-
-**Returns:** Rules with patterns, match types, linked COA accounts, priority, and confidence scores.
-
-**When to use:**
-- User asks "what rules do we have?", "how are transactions categorized?"
-- Before creating a new rule — to check for duplicates
-
-**NOT for:** Categorizing individual transactions (use update_bank_transaction_status). Not for creating rules (use create_categorization_rule).
-
-**Key trigger phrases:** "categorization rules", "auto-categorize", "transaction rules"`,
+    description: "List pattern-matching rules that auto-categorize imported bank transactions.",
     inputSchema: s(getCategorizationRulesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_categorization_rules", getCategorizationRules));
 
   server.registerTool("create_categorization_rule", {
     title: "Create Categorization Rule",
-    description: `**Purpose:** Create a rule that auto-categorizes future imported bank transactions by matching patterns against descriptions.
-
-**Returns:** Created rule with ID and configuration.
-
-**When to use:**
-- User notices repeated transactions (e.g. "all GRAB transactions are transport expense")
-- After categorizing a transaction manually — to automate future ones
-- User says "create a rule for", "auto-categorize transactions matching"
-
-**NOT for:** One-time categorization (use update_bank_transaction_status). Not for updating existing rules (use update_categorization_rule).
-
-**Workflow:** search_accounts (find target COA account) → create_categorization_rule
-
-**Key trigger phrases:** "create rule", "auto-categorize", "whenever I see transactions for"`,
+    description: "Create a rule that auto-categorizes future bank transactions matching a pattern.",
     inputSchema: s(createCategorizationRuleSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("create_categorization_rule", createCategorizationRule));
 
   server.registerTool("update_categorization_rule", {
     title: "Update Categorization Rule",
-    description: `**Purpose:** Modify or deactivate an existing categorization rule.
-
-**Returns:** Updated rule details.
-
-**When to use:**
-- Refining a rule's pattern, COA account mapping, or priority
-- Deactivating a rule that's no longer needed
-- User says "change the rule for", "update categorization"
-
-**NOT for:** Creating new rules (use create_categorization_rule). Not for deleting rules — deactivate them instead by setting isActive=false.
-
-**Key trigger phrases:** "update rule", "change rule", "deactivate rule"`,
+    description: "Modify or deactivate an existing categorization rule.",
     inputSchema: s(updateCategorizationRuleSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("update_categorization_rule", updateCategorizationRule));
@@ -611,87 +412,28 @@ export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): Mc
 
   server.registerTool("get_journal_entries", {
     title: "List Journal Entries",
-    description: `**Purpose:** List journal entries with their line items, filtered by period, status, or source.
-
-**Returns:** Journal entries with entry numbers, dates, amounts, lines (debit/credit), status, and audit trail.
-
-**When to use:**
-- User asks "show me journal entries", "what entries were posted this month?"
-- Reviewing posted entries, verifying imports, or auditing the journal
-- After creating or posting entries — to verify
-
-**NOT for:** Searching by keyword (use search_journal_entries). Not for the General Ledger view (use get_general_ledger).
-
-**Key trigger phrases:** "journal entries", "posted entries", "show entries"`,
+    description: "List journal entries with line items, filtered by period, status, or source.",
     inputSchema: s(getJournalEntriesSchema),
-    outputSchema: journalEntriesOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_journal_entries", getJournalEntries));
 
   server.registerTool("search_journal_entries", {
     title: "Search Journal Entries",
-    description: `**Purpose:** Search journal entries by description, memo, entry number, document number, or vendor/customer name.
-
-**Returns:** Matching entries with relevance ranking, status, and amounts.
-
-**When to use:**
-- User asks "find the entry for rent", "search for entry MAN-2026-0042"
-- Looking for a specific journal entry by keyword
-
-**NOT for:** Listing all entries (use get_journal_entries). Not for GL postings (use get_general_ledger).
-
-**Key trigger phrases:** "find entry", "search entries", "entry number"`,
+    description: "Search journal entries by description, memo, entry number, or entity name.",
     inputSchema: s(searchJournalEntriesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("search_journal_entries", searchJournalEntries));
 
   server.registerTool("create_journal_entries", {
     title: "Create Journal Entries",
-    description: `**Purpose:** Create double-entry journal entries with balanced debit/credit lines.
-
-**Before using this tool:**
-1. Get a valid coaId from get_chart_of_accounts
-2. Find account IDs using search_accounts
-3. Verify debits equal credits for each entry
-4. You MUST have a valid createdBy user ID
-
-**Returns:** Created entries with IDs, entry numbers, and per-entry success/error details.
-
-**When to use:**
-- User says "create a journal entry", "record an adjustment"
-- Recording manual transactions, adjustments, or opening balances
-
-**NOT for:** Posting bank transactions to GL (use post_bank_transactions). Not for recording customer/vendor payments (use record_payment).
-
-**Workflow:** get_chart_of_accounts → search_accounts → create_journal_entries → update_journal_entry_status (post)
-
-**Key trigger phrases:** "create entry", "journal entry", "record adjustment", "book entry"`,
+    description: "Create double-entry journal entries with balanced debit/credit lines. Requires coaId and account IDs from search_accounts.",
     inputSchema: s(createJournalEntriesSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("create_journal_entries", createJournalEntries));
 
   server.registerTool("update_journal_entry_status", {
     title: "Update Journal Entry Status",
-    description: `**Purpose:** Change journal entry status. Posting auto-creates GL entries.
-
-Valid transitions: draft → posted/voided, posted → approved/voided, approved → voided.
-
-**IMPORTANT — When voiding an entry:**
-- You MUST warn the user: "Voiding is irreversible. The entry will be marked as voided and GL entries will be reversed."
-- You MUST confirm with the user before proceeding
-- Reference the entry by its entry number when confirming
-
-**Returns:** Updated entry with new status and audit trail.
-
-**When to use:**
-- After create_journal_entries — to post draft entries
-- User says "post this entry", "approve entry X", "void entry Y"
-
-**NOT for:** Creating entries (use create_journal_entries). Not for editing entry content — create a new correcting entry instead.
-
-**Workflow:** create_journal_entries → update_journal_entry_status (draft→posted) → update_journal_entry_status (posted→approved)
-
-**Key trigger phrases:** "post entry", "approve entry", "void entry"`,
+    description: "Change journal entry status (draft->posted->approved, any->voided). Voiding is irreversible — confirm with user.",
     inputSchema: s(updateJournalEntryStatusSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("update_journal_entry_status", updateJournalEntryStatus));
@@ -700,55 +442,21 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
   server.registerTool("get_journal_entry_templates", {
     title: "List Journal Entry Templates",
-    description: `**Purpose:** List reusable journal entry templates for recurring entries.
-
-**Returns:** Templates with line items, recurrence settings (monthly/quarterly/yearly), and last applied date.
-
-**When to use:**
-- User asks "what recurring entries do we have?", "show me templates"
-- Before applying a template — to find the right one
-
-**NOT for:** Creating templates (use create_journal_entry_template). Not for applying (use apply_journal_entry_template).
-
-**Key trigger phrases:** "templates", "recurring entries", "show templates"`,
+    description: "List reusable journal entry templates with recurrence settings.",
     inputSchema: s(getJournalEntryTemplatesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_journal_entry_templates", getJournalEntryTemplates));
 
   server.registerTool("create_journal_entry_template", {
     title: "Create Journal Entry Template",
-    description: `**Purpose:** Create a reusable template for recurring journal entries (rent, depreciation, payroll accruals).
-
-**Returns:** Created template with ID and configuration.
-
-**When to use:**
-- User has a recurring entry they want to automate
-- User says "create a template for monthly rent", "set up recurring depreciation"
-
-**NOT for:** One-time entries (use create_journal_entries). Not for applying existing templates (use apply_journal_entry_template).
-
-**Workflow:** search_accounts → create_journal_entry_template → apply_journal_entry_template each period
-
-**Key trigger phrases:** "create template", "recurring entry", "set up monthly"`,
+    description: "Create a reusable template for recurring journal entries (rent, depreciation, payroll).",
     inputSchema: s(createJournalEntryTemplateSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("create_journal_entry_template", createJournalEntryTemplate));
 
   server.registerTool("apply_journal_entry_template", {
     title: "Apply Journal Entry Template",
-    description: `**Purpose:** Execute a template, creating a draft journal entry for a specific date.
-
-**Returns:** Created draft journal entry with ID and entry number.
-
-**When to use:**
-- User says "apply the rent template for March", "run the depreciation template"
-- Monthly/quarterly processing of recurring entries
-
-**NOT for:** Creating templates (use create_journal_entry_template). Not for posting the created entry (use update_journal_entry_status after this).
-
-**Workflow:** get_journal_entry_templates → apply_journal_entry_template → update_journal_entry_status (post)
-
-**Key trigger phrases:** "apply template", "run template", "process recurring"`,
+    description: "Execute a template to create a draft journal entry for a specific date.",
     inputSchema: s(applyJournalEntryTemplateSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("apply_journal_entry_template", applyJournalEntryTemplate));
@@ -757,40 +465,15 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
   server.registerTool("get_general_ledger", {
     title: "Query General Ledger",
-    description: `**Purpose:** Query the General Ledger — the complete record of all posted accounting entries.
-
-**Returns:** GL postings with account details, amounts, running balances, journal entry references, and reconciliation status.
-
-**When to use:**
-- User asks "show me the GL", "what's posted to account X?"
-- Drilling into posted transactions for a specific account or period
-- Verifying postings or investigating discrepancies
-
-**NOT for:** Summary balances (use get_account_balances). Not for a single account's detail (use get_account_activity — it's optimized for single-account drill-down). Not for Trial Balance format (use get_trial_balance).
-
-**Key trigger phrases:** "general ledger", "GL", "posted transactions", "ledger entries"`,
+    description: "Query the General Ledger: all posted accounting entries with amounts, running balances, and reconciliation status.",
     inputSchema: s(getGeneralLedgerSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_general_ledger", getGeneralLedger));
 
   server.registerTool("get_trial_balance", {
     title: "Get Trial Balance",
-    description: `**Purpose:** Get Trial Balance snapshots — the verification report that debits equal credits.
-
-**Returns:** TB metadata and full balance details per account (debit total, credit total, closing balance), filtered by period or balance type.
-
-**When to use:**
-- User asks "show me the trial balance", "TB for March"
-- Period-end verification before closing
-- Comparing preliminary vs adjusted vs final TB
-
-**NOT for:** Individual account balances (use get_account_balances). Not for Income Statement or Balance Sheet format (use those specific tools).
-
-**Workflow:** get_trial_balance → verify debits = credits → close_period
-
-**Key trigger phrases:** "trial balance", "TB", "debit credit check"`,
+    description: "Trial Balance report: debit and credit totals per account for a given period. Used to verify balance before period close.",
     inputSchema: s(getTrialBalanceSchema),
-    outputSchema: trialBalanceOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_trial_balance", getTrialBalance));
 
@@ -798,56 +481,22 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
   server.registerTool("get_income_statement", {
     title: "Get Income Statement (P&L)",
-    description: `**Purpose:** Profit & Loss report showing revenue, expenses, and net income.
-
-**Returns:** Revenue and expense accounts with period totals, grouped by account type, with net income calculation.
-
-**When to use:**
-- User asks "P&L", "profit and loss", "how profitable are we?", "income statement"
-- Financial analysis, period-end reporting
-- Comparing periods for trend analysis
-
-**NOT for:** Balance Sheet (use get_balance_sheet). Not for cash flow (use get_cash_flow_summary). Not for detailed account activity (use get_account_activity).
-
-**Key trigger phrases:** "P&L", "income statement", "profit and loss", "profitability"`,
+    description: "Profit & Loss report: revenue, expenses, and net income for a period.",
     inputSchema: s(getIncomeStatementSchema),
-    outputSchema: incomeStatementOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_income_statement", getIncomeStatement));
 
   server.registerTool("get_balance_sheet", {
     title: "Get Balance Sheet",
-    description: `**Purpose:** Balance Sheet snapshot showing assets, liabilities, and equity as of a given period.
-
-**Returns:** Accounts grouped by type (assets, liabilities, equity) with closing balances. Checks A = L + E balance equation.
-
-**When to use:**
-- User asks "balance sheet", "what do we own?", "net worth"
-- Period-end financial position assessment
-
-**NOT for:** Income Statement (use get_income_statement). Not for detailed account activity (use get_account_activity).
-
-**Key trigger phrases:** "balance sheet", "assets and liabilities", "financial position", "net worth"`,
+    description: "Balance Sheet snapshot: assets, liabilities, and equity as of a given period. Checks A = L + E.",
     inputSchema: s(getBalanceSheetSchema),
-    outputSchema: balanceSheetOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_balance_sheet", getBalanceSheet));
 
   server.registerTool("get_cash_flow_summary", {
     title: "Get Cash Flow Summary",
-    description: `**Purpose:** Monthly cash flow summary derived from bank transactions.
-
-**Returns:** Monthly inflows, outflows, and net cash flow with top spending categories. Defaults to last 12 months.
-
-**When to use:**
-- User asks "cash flow", "where is the money going?", "monthly spending"
-- Analyzing spending trends or cash position over time
-
-**NOT for:** Individual transactions (use get_bank_transactions). Not for bank account balances (use get_financial_accounts).
-
-**Key trigger phrases:** "cash flow", "spending", "where's the money going", "inflows and outflows"`,
+    description: "Monthly cash flow summary from bank transactions: inflows, outflows, and net cash with top spending categories.",
     inputSchema: s(getCashFlowSummarySchema),
-    outputSchema: cashFlowSummaryOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_cash_flow_summary", getCashFlowSummary));
 
@@ -855,73 +504,28 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
   server.registerTool("get_customers", {
     title: "List Customers",
-    description: `**Purpose:** List customers with invoice counts, outstanding balances, and payment terms.
-
-**Returns:** Customer details including name, email, registration number, payment terms, credit limits, and linked COA accounts.
-
-**When to use:**
-- User asks "show me customers", "who owes us?"
-- Before creating an invoice — to find the customerId
-- Reviewing customer portfolio
-
-**NOT for:** Customer aging (use get_customer_aging). Not for a specific customer's transactions (use get_customer_statement).
-
-**Key trigger phrases:** "customers", "client list", "who do we invoice"`,
+    description: "List customers with outstanding balances, payment terms, and credit limits.",
     inputSchema: s(getCustomersSchema),
-    outputSchema: customersOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_customers", getCustomers));
 
   server.registerTool("get_customer_statement", {
     title: "Get Customer Statement of Account",
-    description: `**Purpose:** Full statement of account for a single customer — all invoices, payments, and credit/debit notes with running totals.
-
-**Returns:** Statement with all transactions in date range, summary totals (total invoiced, paid, outstanding, credits, debits).
-
-**When to use:**
-- User asks "statement for customer X", "what does customer X owe?"
-- Preparing a statement to send to a customer
-- Reviewing a customer's account history
-
-**NOT for:** All customers' aging (use get_customer_aging). Not for listing all customers (use get_customers).
-
-**Key trigger phrases:** "customer statement", "statement of account", "what does X owe"`,
+    description: "Full statement of account for a single customer: invoices, payments, credits, and running balance.",
     inputSchema: s(getCustomerStatementSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_customer_statement", getCustomerStatement));
 
   server.registerTool("get_customer_aging", {
     title: "Get Customer Aging (AR)",
-    description: `**Purpose:** Accounts Receivable aging report — outstanding invoices grouped by customer with aging buckets.
-
-**Returns:** Per-customer totals in buckets: current, 1-30, 31-60, 61-90, and 90+ days past due.
-
-**When to use:**
-- User asks "who owes us?", "AR aging", "overdue invoices"
-- Collections review, cash flow planning
-- Identifying customers with overdue payments
-
-**NOT for:** Individual invoice details (use get_invoice_aging_detail for invoice-level granularity). Not for vendor payables (use get_vendor_aging).
-
-**Key trigger phrases:** "AR aging", "customer aging", "who owes us", "overdue receivables"`,
+    description: "AR aging report: outstanding invoices grouped by customer in current/30/60/90/90+ day buckets.",
     inputSchema: s(getCustomerAgingSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_customer_aging", getCustomerAging));
 
   server.registerTool("get_invoice_aging_detail", {
     title: "Get Invoice Aging Detail",
-    description: `**Purpose:** Invoice-level aging report — each outstanding invoice with days past due and aging bucket.
-
-**Returns:** Individual invoices with customer name, amount, due date, days past due, and bucket (current, 1-30, 31-60, 61-90, over-90).
-
-**When to use:**
-- User asks "which invoices are overdue?", "show me late invoices"
-- Drilling into a specific customer's overdue invoices
-- More granular than get_customer_aging (which groups by customer)
-
-**NOT for:** Customer-level aging summary (use get_customer_aging). Not for all invoices (use get_invoices).
-
-**Key trigger phrases:** "overdue invoices", "invoice aging", "late invoices", "which invoices are past due"`,
+    description: "Invoice-level aging: each outstanding invoice with days past due and aging bucket. More granular than get_customer_aging.",
     inputSchema: s(getInvoiceAgingDetailSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_invoice_aging_detail", getInvoiceAgingDetail));
@@ -930,87 +534,28 @@ Valid transitions: draft → posted/voided, posted → approved/voided, approved
 
   server.registerTool("get_invoices", {
     title: "List Invoices",
-    description: `**Purpose:** List invoices with line items, payment amounts, and outstanding balances.
-
-**Returns:** Invoices with status, amounts, line items, customer info, due dates, and payment tracking.
-
-**When to use:**
-- User asks "show me invoices", "recent invoices", "draft invoices"
-- Reviewing invoice status or payment tracking
-
-**NOT for:** Creating invoices (use create_invoice). Not for aging analysis (use get_customer_aging or get_invoice_aging_detail).
-
-**Key trigger phrases:** "invoices", "show invoices", "invoice list"`,
+    description: "List invoices with line items, payment amounts, and outstanding balances.",
     inputSchema: s(getInvoicesSchema),
-    outputSchema: invoicesOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_invoices", getInvoices));
 
   server.registerTool("create_invoice", {
     title: "Create Invoice",
-    description: `**Purpose:** Create a new invoice for a customer with line items, auto-calculated totals, and auto-generated invoice number.
-
-**Before using this tool:**
-1. Get a valid customerId from get_customers
-2. Confirm line items and amounts with the user
-3. You MUST have a valid createdBy user ID
-
-**Returns:** Created invoice with ID, invoice number, calculated totals, and status (draft).
-
-**When to use:**
-- User says "create an invoice", "invoice customer X for Y"
-- Billing a customer for goods or services
-
-**NOT for:** Quotations (use get_quotations — quotation creation coming soon). Not for recording received payments (use record_payment).
-
-**Workflow:** get_customers → confirm details → create_invoice → update_invoice_status (finalize) → record_payment (when paid)
-
-**Key trigger phrases:** "create invoice", "invoice for", "bill customer", "new invoice"`,
+    description: "Create a draft invoice for a customer with line items and auto-generated number. Requires customerId from get_customers.",
     inputSchema: s(createInvoiceSchema),
-    outputSchema: createInvoiceOutputSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("create_invoice", createInvoice));
 
   server.registerTool("update_invoice_status", {
     title: "Update Invoice Status",
-    description: `**Purpose:** Change an invoice's status (e.g. finalize a draft, mark as paid, void).
-
-Valid transitions: draft → finalized/void, finalized → paid/partially_paid/overdue/void, partially_paid → paid/void, overdue → paid/partially_paid/void.
-
-**IMPORTANT — When voiding an invoice:**
-- You MUST warn the user: "Voiding invoice [number] is irreversible."
-- You MUST confirm with the user before proceeding
-- Reference the invoice by its number, not ID
-
-**Returns:** Updated invoice with new status.
-
-**When to use:**
-- After create_invoice — to finalize the draft
-- When payment is received — to mark as paid
-- User says "finalize invoice", "mark as paid", "void invoice"
-
-**NOT for:** Creating invoices (use create_invoice). Not for recording the payment itself (use record_payment).
-
-**Workflow:** create_invoice → update_invoice_status (finalize) → send to customer → record_payment → update_invoice_status (paid)
-
-**Key trigger phrases:** "finalize invoice", "mark invoice paid", "void invoice"`,
+    description: "Change invoice status (draft->finalized->paid/void). Voiding is irreversible — confirm with user.",
     inputSchema: s(updateInvoiceStatusSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("update_invoice_status", updateInvoiceStatus));
 
   server.registerTool("get_credit_debit_notes", {
     title: "List Credit/Debit Notes",
-    description: `**Purpose:** List credit notes (reduce amount owed) and debit notes (increase amount owed).
-
-**Returns:** Notes with type, amounts, applications, refund status, reasons, and linked invoices.
-
-**When to use:**
-- User asks "show me credit notes", "any debit notes?"
-- Reviewing adjustments to customer accounts
-
-**NOT for:** Creating notes (not yet available via MCP). Not for customer statements (use get_customer_statement — it includes notes).
-
-**Key trigger phrases:** "credit notes", "debit notes", "adjustments"`,
+    description: "List credit notes (reduce amount owed) and debit notes (increase amount owed) with linked invoices.",
     inputSchema: s(getCreditDebitNotesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_credit_debit_notes", getCreditDebitNotes));
@@ -1019,55 +564,21 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_vendors", {
     title: "List Vendors",
-    description: `**Purpose:** List vendors (suppliers) with outstanding bill counts and payment details.
-
-**Returns:** Vendor details including name, email, payment terms, preferred payment method, bank details, and default COA accounts.
-
-**When to use:**
-- User asks "show me vendors", "who do we pay?"
-- Before creating a bill or recording a payment — to find the vendorId
-- Reviewing the vendor portfolio
-
-**NOT for:** Vendor aging (use get_vendor_aging). Not for a specific vendor's transactions (use get_vendor_statement).
-
-**Key trigger phrases:** "vendors", "suppliers", "who do we pay", "vendor list"`,
+    description: "List vendors with outstanding bill counts, payment terms, and bank details.",
     inputSchema: s(getVendorsSchema),
-    outputSchema: vendorsOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_vendors", getVendors));
 
   server.registerTool("get_vendor_statement", {
     title: "Get Vendor Statement",
-    description: `**Purpose:** Full statement for a single vendor — all bills, payments, and outstanding amounts.
-
-**Returns:** Statement with bills, payments, and summary (total billed, paid, outstanding).
-
-**When to use:**
-- User asks "statement for vendor X", "how much do we owe vendor X?"
-- Reviewing a vendor's account history
-- Preparing for vendor payment run
-
-**NOT for:** All vendors' aging (use get_vendor_aging). Not for listing all vendors (use get_vendors).
-
-**Key trigger phrases:** "vendor statement", "how much do we owe", "vendor account"`,
+    description: "Full statement for a single vendor: bills, payments, and outstanding amounts.",
     inputSchema: s(getVendorStatementSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_vendor_statement", getVendorStatement));
 
   server.registerTool("get_vendor_aging", {
     title: "Get Vendor Aging (AP)",
-    description: `**Purpose:** Accounts Payable aging report — outstanding bills grouped by vendor with aging buckets.
-
-**Returns:** Per-vendor totals in buckets: current, 1-30, 31-60, 61-90, and 90+ days past due.
-
-**When to use:**
-- User asks "who do we owe?", "AP aging", "overdue bills"
-- Payment planning, vendor management
-- Identifying overdue payables
-
-**NOT for:** Individual bill details (use get_bills). Not for customer receivables (use get_customer_aging).
-
-**Key trigger phrases:** "AP aging", "vendor aging", "who do we owe", "overdue payables"`,
+    description: "AP aging report: outstanding bills grouped by vendor in current/30/60/90/90+ day buckets.",
     inputSchema: s(getVendorAgingSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_vendor_aging", getVendorAging));
@@ -1076,17 +587,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_bills", {
     title: "List Bills",
-    description: `**Purpose:** List bills (vendor invoices/payables) with amounts, payment status, and vendor details.
-
-**Returns:** Bills with vendor info, amounts (subtotal, tax, total, paid, outstanding), line items, status, and due dates.
-
-**When to use:**
-- User asks "show me bills", "what bills are pending?", "unpaid bills"
-- Reviewing payables or planning payments
-
-**NOT for:** Vendor aging summary (use get_vendor_aging). Not for vendor-specific history (use get_vendor_statement).
-
-**Key trigger phrases:** "bills", "payables", "vendor invoices", "pending bills"`,
+    description: "List bills (vendor invoices/payables) with amounts, payment status, and line items.",
     inputSchema: s(getBillsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_bills", getBills));
@@ -1095,17 +596,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_purchase_orders", {
     title: "List Purchase Orders",
-    description: `**Purpose:** List purchase orders (POs) with vendor details, amounts, and approval status.
-
-**Returns:** POs with vendor info, line items, amounts, status (draft/pending_approval/approved/received/closed), and delivery dates.
-
-**When to use:**
-- User asks "show me POs", "pending purchase orders", "what have we ordered?"
-- Tracking procurement or checking approval status
-
-**NOT for:** Bills (use get_bills — bills are for received goods). Not for vendor details (use get_vendors).
-
-**Key trigger phrases:** "purchase orders", "POs", "what have we ordered", "procurement"`,
+    description: "List purchase orders with vendor details, line items, and approval status.",
     inputSchema: s(getPurchaseOrdersSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_purchase_orders", getPurchaseOrders));
@@ -1114,40 +605,14 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_payments", {
     title: "List Payments",
-    description: `**Purpose:** List all recorded payments — both inbound (from customers) and outbound (to vendors).
-
-**Returns:** Payments with entity details, amounts, dates, payment methods, reconciliation status, and linked invoices/bills.
-
-**When to use:**
-- User asks "show me payments", "recent payments", "what did we pay?"
-- Reviewing payment history or reconciliation status
-
-**NOT for:** Recording new payments (use record_payment). Not for invoice payment tracking (use get_invoices — it shows paid amounts).
-
-**Key trigger phrases:** "payments", "payment history", "what did we pay", "what came in"`,
+    description: "List all recorded payments, both inbound (from customers) and outbound (to vendors).",
     inputSchema: s(getPaymentsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_payments", getPayments));
 
   server.registerTool("record_payment", {
     title: "Record Payment",
-    description: `**Purpose:** Record a payment received from a customer or made to a vendor.
-
-**Before using this tool:**
-1. Confirm the amount, entity, and date with the user
-2. If linking to an invoice/bill, verify the outstanding balance
-
-**Returns:** Created payment record with ID and status.
-
-**When to use:**
-- User says "record a payment", "customer X paid Y", "we paid vendor Z"
-- Recording cash receipts or vendor payments
-
-**NOT for:** Importing bank transactions (use create_bank_transactions). Not for creating journal entries directly (use create_journal_entries).
-
-**Workflow:** get_customers/get_vendors → confirm details → record_payment → update_invoice_status (if fully paid)
-
-**Key trigger phrases:** "record payment", "received payment", "paid vendor", "customer paid"`,
+    description: "Record a payment received from a customer or made to a vendor. Confirm amount and entity with user.",
     inputSchema: s(recordPaymentSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("record_payment", recordPayment));
@@ -1156,17 +621,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_quotations", {
     title: "List Quotations",
-    description: `**Purpose:** List quotations (quotes/proposals) sent to customers.
-
-**Returns:** Quotations with customer info, line items, amounts, status (draft/sent/accepted/rejected/expired/converted), and conversion tracking.
-
-**When to use:**
-- User asks "show me quotations", "pending quotes", "accepted proposals"
-- Tracking quote-to-invoice conversion pipeline
-
-**NOT for:** Invoices (use get_invoices). Not for creating quotations (not yet available via MCP).
-
-**Key trigger phrases:** "quotations", "quotes", "proposals", "pending quotes"`,
+    description: "List quotations sent to customers with status and conversion tracking.",
     inputSchema: s(getQuotationsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_quotations", getQuotations));
@@ -1175,17 +630,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_recurring_invoices", {
     title: "List Recurring Invoice Templates",
-    description: `**Purpose:** List recurring invoice templates — automated invoice generation schedules.
-
-**Returns:** Templates with frequency, schedule, customer info, line items, next generation date, and total generated count.
-
-**When to use:**
-- User asks "recurring invoices", "auto-invoicing", "what invoices are scheduled?"
-- Reviewing subscription billing or retainer schedules
-
-**NOT for:** Regular invoices (use get_invoices). Not for journal entry templates (use get_journal_entry_templates).
-
-**Key trigger phrases:** "recurring invoices", "subscription billing", "auto-invoicing", "scheduled invoices"`,
+    description: "List recurring invoice templates with frequency, schedule, and next generation date.",
     inputSchema: s(getRecurringInvoicesSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_recurring_invoices", getRecurringInvoices));
@@ -1194,15 +639,7 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_tags", {
     title: "List Tags",
-    description: `**Purpose:** List tags used to organize and categorize entities (vendors, customers, invoices, bills, etc.).
-
-**Returns:** Tags with names, colors, descriptions, and usage counts.
-
-**When to use:**
-- User asks "what tags do we have?", "show me tags"
-- Reviewing organizational taxonomy
-
-**Key trigger phrases:** "tags", "labels", "categories"`,
+    description: "List tags used to organize entities, with usage counts.",
     inputSchema: s(getTagsSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_tags", getTags));
@@ -1211,65 +648,21 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_period_status", {
     title: "Get Period Status",
-    description: `**Purpose:** Overview of all accounting periods with open/closed status and readiness indicators.
-
-**Returns:** Periods with open/closed status, transaction counts, draft JE counts, and whether they're ready to close.
-
-**When to use:**
-- Before close_period — to see which periods are ready
-- User asks "which periods are open?", "what needs closing?"
-- Month-end workflow planning
-
-**NOT for:** Closing periods (use close_period). Not for balance details (use get_account_balances).
-
-**Key trigger phrases:** "period status", "which periods are open", "ready to close"`,
+    description: "Overview of accounting periods with open/closed status and readiness indicators.",
     inputSchema: s(getPeriodStatusSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_period_status", getPeriodStatus));
 
   server.registerTool("close_period", {
     title: "Close Accounting Period",
-    description: `**Purpose:** Lock an accounting period, preventing new journal entries from being posted to it.
-
-**IMPORTANT — Before using this tool, you MUST:**
-1. Run get_period_status to show the user which periods are open
-2. Run get_journal_entries with status="draft" for this period
-3. Warn the user if draft JEs exist — they will be blocked from posting after close
-4. Confirm with the user: "Are you sure you want to close period [YYYY-MM]? This will prevent any new entries."
-
-**Returns:** Close confirmation with audit details.
-
-**When to use:**
-- Month-end close process
-- User says "close the month", "lock January", "close period"
-
-**NOT for:** Checking period status (use get_period_status). Not for reopening (use reopen_period).
-
-**Workflow:** get_period_status → get_journal_entries (check drafts) → get_trial_balance → confirm with user → close_period
-
-**Key trigger phrases:** "close period", "close the month", "lock period", "month-end close"`,
+    description: "Lock an accounting period, preventing new journal entries. Check for draft JEs first and confirm with user.",
     inputSchema: s(closePeriodSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("close_period", closePeriod));
 
   server.registerTool("reopen_period", {
     title: "Reopen Accounting Period",
-    description: `**Purpose:** Reopen a previously closed accounting period to allow corrections.
-
-**IMPORTANT — Before using this tool, you MUST:**
-1. Warn the user: "Reopening a period allows new entries and is recorded in the audit trail."
-2. Confirm with the user and ask for the reason
-3. Note: Cannot reopen if a later period is also closed — must reopen later periods first
-
-**Returns:** Reopen confirmation with audit trail.
-
-**When to use:**
-- User needs to make corrections to a closed period
-- User says "reopen January", "unlock the period"
-
-**NOT for:** Closing periods (use close_period). Not for checking status (use get_period_status).
-
-**Key trigger phrases:** "reopen period", "unlock period", "reopen the month"`,
+    description: "Reopen a closed accounting period for corrections. Cannot reopen if a later period is also closed. Confirm with user.",
     inputSchema: s(reopenPeriodSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, t("reopen_period", reopenPeriod));
@@ -1278,41 +671,14 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("get_reconciliation_status", {
     title: "Get Reconciliation Status",
-    description: `**Purpose:** Bank reconciliation summary — reconciled vs unreconciled GL entries per account.
-
-**Returns:** Per-account reconciliation counts and amounts (reconciled, unreconciled, total).
-
-**When to use:**
-- User asks "reconciliation status", "how much is reconciled?"
-- Before month-end close — to check reconciliation progress
-
-**NOT for:** Reconciling entries (use reconcile_accounts). Not for bank transactions (use get_bank_transactions).
-
-**Key trigger phrases:** "reconciliation status", "how much reconciled", "unreconciled entries"`,
+    description: "Bank reconciliation summary: reconciled vs unreconciled GL entries per account.",
     inputSchema: s(getReconciliationStatusSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("get_reconciliation_status", getReconciliationStatus));
 
   server.registerTool("reconcile_accounts", {
     title: "Reconcile GL Entries",
-    description: `**Purpose:** Mark General Ledger entries as reconciled (matched to bank statement).
-
-**Before using this tool:**
-1. Use get_general_ledger with isReconciled=false to find unreconciled entries
-2. Match entries against bank statement data
-3. Confirm the entries to reconcile with the user
-
-**Returns:** Reconciliation results per entry.
-
-**When to use:**
-- Bank reconciliation process — matching GL to bank statement
-- User says "reconcile these entries", "mark as reconciled"
-
-**NOT for:** Checking reconciliation status (use get_reconciliation_status). Not for bank transactions (use update_bank_transaction_status).
-
-**Workflow:** get_general_ledger (unreconciled) → match to bank statement → confirm → reconcile_accounts
-
-**Key trigger phrases:** "reconcile", "mark reconciled", "bank reconciliation"`,
+    description: "Mark General Ledger entries as reconciled against bank statement. Confirm entries with user.",
     inputSchema: s(reconcileAccountsSchema),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("reconcile_accounts", reconcileAccounts));
@@ -1725,43 +1091,14 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   server.registerTool("search_schema", {
     title: "Search Database Schema",
-    description: `**Purpose:** Discover tables, columns, types, and foreign key relationships in the database.
-
-**Returns:** Schema metadata matching your search — table names, column definitions, types, and relationships.
-
-**When to use:**
-- Before execute_query — you MUST use this first to discover available tables and columns
-- User asks "what tables exist?", "what columns does invoices have?"
-
-**NOT for:** Running queries (use execute_query after this). Not for application-level data (use the typed tools instead).
-
-**Workflow:** search_schema → understand structure → execute_query
-
-**Key trigger phrases:** "database schema", "what tables", "table structure"`,
+    description: "Discover database tables, columns, types, and foreign keys. Always call this before execute_query.",
     inputSchema: s(searchSchemaSchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, withCodeScope("search_schema", searchSchema));
 
   server.registerTool("execute_query", {
     title: "Execute SQL Query",
-    description: `**Purpose:** Run a read-only SQL SELECT query against the accounting database. Your escape hatch for questions the typed tools can't answer.
-
-**IMPORTANT — Before using this tool:**
-1. You MUST use search_schema first to discover tables and columns — never guess
-2. You MUST show the query to the user before executing
-3. Use $TENANT_FILTER as the FIRST condition after WHERE (auto-replaced with tenant filter)
-
-**Security constraints:** No CTEs (WITH), no OR (use IN() instead), no UNION. $TENANT_FILTER must appear exactly once, immediately after WHERE. Requires explicit "query:execute" scope on the API key. Max 200 rows.
-
-**When to use:**
-- The typed tools can't answer the question (e.g. complex joins, aggregations)
-- User needs a custom report not covered by existing tools
-
-**NOT for:** Standard reports (use get_income_statement, get_balance_sheet, etc.). Not for writes — this is read-only.
-
-**Key tables:** journal_entries, journal_entry_lines, accounts, chart_of_accounts, general_ledger, account_balances, invoices, bills, bank_transactions, customers, vendors, financial_accounts, credit_debit_notes, client_details, business_context, purchase_orders, quotations, payments_unified, tags, entity_tags, recurring_invoice_templates, fixed_assets
-
-**Key trigger phrases:** "custom query", "SQL", "run a query", "complex report"`,
+    description: "Run a read-only SQL SELECT query with auto-injected tenant filter. Must use search_schema first. Show query to user before executing.",
     inputSchema: s(executeQuerySchema),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, t("execute_query", executeQuery));
@@ -1776,48 +1113,14 @@ Valid transitions: draft → finalized/void, finalized → paid/partially_paid/o
 
   _origRegisterTool("search_tools", {
     title: "Search Tools",
-    description: `**Purpose:** Discover available tools and get TypeScript signatures for use with execute_code.
-
-**Returns:** Matched tool names, categories, descriptions, and TypeScript declarations for use in code scripts.
-
-**When to use:**
-- Before execute_code — discover which tools exist and their parameter types
-- User asks for a multi-step workflow that would benefit from batching tool calls
-- You want to reduce token usage by calling multiple tools in a single script
-
-**Workflow:** search_tools → read declarations → execute_code with cynco.* calls
-
-**Key trigger phrases:** "find tools", "what tools", "search tools", "code mode"`,
+    description: "Discover available tools and get TypeScript signatures for use with execute_code.",
     inputSchema: searchToolsSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, withCodeScope("search_tools", codeModeSearchHandler));
 
   _origRegisterTool("execute_code", {
     title: "Execute Code",
-    description: `**Purpose:** Run a JavaScript script that calls multiple tools in one round-trip. Dramatically reduces token usage for multi-step workflows.
-
-**IMPORTANT — Before using this tool:**
-1. Use search_tools first to discover available tools and get TypeScript signatures
-2. Call tools via \`await cynco.<tool_name>(args)\` — each call goes through the same auth and tenant scoping as direct tool calls
-3. Use \`console.log()\` to output results — the output is captured and returned
-
-**Sandbox:** The script runs in an isolated sandbox with NO access to process, require, import, fetch, setTimeout, eval, or Function. The only way to interact with the system is through \`cynco.*\` calls.
-
-**Limits:** 60s timeout, 50 tool calls max, 10KB script max, 50KB output max.
-
-**Example:**
-\`\`\`javascript
-const profile = await cynco.get_company_profile({});
-const summary = await cynco.get_financial_summary({});
-const aging = await cynco.get_customer_aging({});
-console.log({
-  company: profile.data?.companyName,
-  totalAR: summary.data?.outstandingAR,
-  overdueCustomers: aging.data?.customers?.filter(c => c.overdue > 0)
-});
-\`\`\`
-
-**Key trigger phrases:** "run code", "execute code", "batch tools", "multi-step script"`,
+    description: "Run a JavaScript script calling multiple tools in one round-trip via cynco.*. Sandboxed with 60s timeout. Use search_tools first.",
     inputSchema: executeCodeSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, withCodeScope("execute_code", codeModeExecuteHandler));
@@ -1829,6 +1132,10 @@ console.log({
   // ── Resources ───────────────────────────────────────────────────
 
   registerResources(server);
+
+  // ── MCP Apps (interactive UIs) ─────────────────────────────────
+
+  registerApps(server);
 
   return server;
 }

@@ -9,7 +9,7 @@ import {
   successResponse,
   errorResponse,
 } from "../utils/validation.js";
-import { tenantSchema } from "../utils/tools.js";
+import { tenantSchema, validateTenantUser } from "../utils/tools.js";
 
 export const createCustomerSchema = {
   ...tenantSchema,
@@ -26,7 +26,7 @@ export const createCustomerSchema = {
   paymentTerms: z.string().max(100).optional().describe("Payment terms (e.g. Net 30)"),
   preferredPaymentMethod: z.string().max(50).optional().describe("Preferred payment method"),
   preferredCurrency: z.string().max(3).optional().describe("Preferred currency code"),
-  creditLimit: z.number().optional().describe("Credit limit amount"),
+  creditLimit: z.number().finite().optional().describe("Credit limit amount"),
   category: z.string().max(100).optional().describe("Customer category"),
   notes: z.string().optional().describe("Internal notes"),
   createdBy: z.string().describe("User ID of the creator"),
@@ -58,18 +58,21 @@ export async function createCustomer(args: {
     validateTypeId(args.createdBy, "usr", "createdBy");
 
     return await withTransaction(async (client: pg.PoolClient) => {
-      const userResult = await client.query(
-        `SELECT id FROM users WHERE id = $1`,
-        [args.createdBy],
-      );
-      if (userResult.rows.length === 0) {
-        return errorResponse(`User not found: ${args.createdBy}`);
+      const userCheck = await validateTenantUser(client, args.createdBy, tenant, "createdBy");
+      if (!userCheck.valid) {
+        return errorResponse(userCheck.error);
       }
+
+      // Advisory lock on tenant + email to prevent TOCTOU race on duplicate check
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext($1 || '-customer-email-' || $2))`,
+        [tenant.value, args.email.toLowerCase()],
+      );
 
       // Check for duplicate email within tenant
       const tw = tenantWhere(tenant, 2);
       const dupResult = await client.query(
-        `SELECT id FROM customers WHERE email = $1 AND ${tw.sql} AND is_active = true`,
+        `SELECT id FROM customers WHERE LOWER(email) = LOWER($1) AND ${tw.sql} AND is_active = true`,
         [args.email, ...tw.params],
       );
       if (dupResult.rows.length > 0) {

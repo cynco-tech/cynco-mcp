@@ -17,7 +17,7 @@
 
   <br />
 
-  107 tools &middot; 9 guided prompts &middot; 4 reference guides &middot; Code Mode
+  107 tools &middot; 6 MCP Apps &middot; 9 guided prompts &middot; 4 reference guides &middot; Code Mode
 
   <br />
   <br />
@@ -348,6 +348,21 @@ Once connected, your AI agent can:
 | `search_schema` | Discover tables, columns, types, and foreign keys |
 | `execute_query` | Read-only SQL SELECT with auto tenant scoping (max 200 rows) |
 
+### MCP Apps (Interactive UIs)
+
+On hosts that support the [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview), these tools render interactive UIs inline in the conversation instead of returning text:
+
+| Tool | Description |
+|------|-------------|
+| `show_dashboard` | Financial dashboard — KPI tiles, cash flow bar chart, AR/AP aging donut |
+| `show_aging_report` | AR/AP aging — donut chart, detail table, drill-down to statements |
+| `show_cash_flow` | Cash flow analysis — monthly bars, running balance, top spending categories |
+| `show_trial_balance` | Trial balance — accounts grouped by type, period picker, balance check |
+| `show_financial_statements` | P&L and Balance Sheet — proper accounting format, period picker, view toggle |
+| `build_invoice` | Invoice builder — customer picker, line items, item catalog, live totals |
+
+Apps call existing tools for data (`get_financial_summary`, `get_customer_aging`, etc.) — no new API surface. Hosts that don't support MCP Apps see the plain text result.
+
 <br />
 
 ## Code Mode
@@ -497,7 +512,7 @@ docker run -p 3100:3100 \
 | `/mcp` | `DELETE` | Yes | Terminate session |
 | `/health` | `GET` | No | Liveness probe with DB pool stats |
 | `/ready` | `GET` | No | Readiness probe |
-| `/metrics` | `GET` | No | Prometheus metrics |
+| `/metrics` | `GET` | Optional | Prometheus metrics (set `METRICS_AUTH_TOKEN` to require bearer auth) |
 | `/icon.png` | `GET` | No | Server icon |
 | `/.well-known/mcp.json` | `GET` | No | MCP service descriptor (capabilities, auth) |
 | `/.well-known/oauth-protected-resource` | `GET` | No | RFC 9728 OAuth metadata |
@@ -529,30 +544,42 @@ docker run -p 3100:3100 \
 pnpm install
 pnpm dev              # stdio mode
 pnpm dev:http         # HTTP mode on :3100
-pnpm test             # Unit tests (296 tests)
+pnpm test             # Unit tests (589 tests)
 pnpm test:integration # Integration tests (requires PostgreSQL)
 pnpm typecheck        # Type check
-pnpm build            # Build to dist/
+pnpm build            # Build apps + compile TypeScript
+pnpm build:apps       # Build MCP App HTML bundles only
 ```
 
 ### Project structure
 
 ```
-src/
-├── index.ts           # Entry point — stdio/HTTP transports, sessions, rate limiting
-├── server.ts          # Tool registration (107 tools, prompts, resources)
-├── auth.ts            # API key + OAuth resolution, scope checking
-├── scope-map.ts       # Tool → scope mappings
-├── db.ts              # PostgreSQL pool, transactions, health checks
-├── logger.ts          # Structured JSON logging
-├── metrics.ts         # Prometheus counters, histograms, gauges
-├── prompts.ts         # 9 guided workflow prompts
-├── resources.ts       # 4 reference resources
-├── output-schemas.ts  # Zod output validation schemas
-├── tools/             # 105 tool implementations (one file per tool)
-├── code-mode/         # Code Mode: sandbox, type generator, search, execute
-├── utils/             # Validation, cursors, errors, TypeID
-└── cli/               # API key generation CLI
+├── apps/                # MCP Apps (interactive UIs)
+│   ├── shared/          # Shared design tokens, formatters, CSS
+│   ├── dashboard/       # Financial dashboard app
+│   ├── aging/           # AR/AP aging report app
+│   ├── cash-flow/       # Cash flow chart app
+│   ├── trial-balance/   # Trial balance viewer app
+│   ├── financial-statements/  # P&L and Balance Sheet app
+│   └── invoice-builder/ # Invoice builder form app
+├── src/
+│   ├── index.ts         # Entry point — stdio/HTTP transports, sessions, rate limiting
+│   ├── server.ts        # Tool registration (107 tools, prompts, resources, apps)
+│   ├── apps.ts          # MCP Apps registration (6 interactive UI tools + resources)
+│   ├── auth.ts          # API key + OAuth resolution, scope checking
+│   ├── scope-map.ts     # Tool → scope mappings
+│   ├── db.ts            # PostgreSQL pool, transactions, health checks
+│   ├── logger.ts        # Structured JSON logging
+│   ├── metrics.ts       # Prometheus counters, histograms, gauges
+│   ├── prompts.ts       # 9 guided workflow prompts
+│   ├── resources.ts     # 4 reference resources
+│   ├── output-schemas.ts# Zod output validation schemas
+│   ├── tools/           # 105 tool implementations (one file per tool)
+│   ├── code-mode/       # Code Mode: sandbox, type generator, search, execute
+│   ├── utils/           # Validation, cursors, errors, TypeID
+│   └── cli/             # API key generation CLI
+├── build-apps.ts        # Build script for MCP App HTML bundles
+└── vite.config.ts       # Vite config for single-file app bundling
 ```
 
 </details>
@@ -561,7 +588,7 @@ src/
 
 ## Contributing
 
-Found a bug or want a new tool? [Open an issue](https://github.com/cynco-tech/cynco-mcp/issues).
+Found a bug or want a new tool? [Open an issue](https://github.com/cynco-labs/cynco-mcp/issues).
 
 <br />
 

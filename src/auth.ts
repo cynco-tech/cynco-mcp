@@ -16,6 +16,16 @@ setInterval(() => {
   }
 }, LAST_USED_THROTTLE_MS).unref();
 
+/** Fire-and-forget last_used_at update, throttled to at most once per 5 min per credential. */
+function touchLastUsed(table: "mcp_api_keys" | "oauth_access_tokens", id: string): void {
+  const key = `${table}:${id}`;
+  const now = Date.now();
+  if (now - (lastUsedCache.get(key) ?? 0) > LAST_USED_THROTTLE_MS) {
+    lastUsedCache.set(key, now);
+    query(`UPDATE ${table} SET last_used_at = NOW() WHERE id = $1`, [id]).catch(() => {});
+  }
+}
+
 export interface ApiKeyRecord {
   id: string;
   tenantType: "client" | "accounting_firm";
@@ -63,14 +73,7 @@ export async function resolveApiKey(rawKey: string): Promise<ApiKeyRecord | null
 
   const row = result.rows[0];
 
-  // Throttled last_used_at update (at most once per 5 min per key)
-  const now = Date.now();
-  const cacheKey = `api:${row.id as string}`;
-  const lastFlushed = lastUsedCache.get(cacheKey) ?? 0;
-  if (now - lastFlushed > LAST_USED_THROTTLE_MS) {
-    lastUsedCache.set(cacheKey, now);
-    query("UPDATE mcp_api_keys SET last_used_at = NOW() WHERE id = $1", [row.id]).catch(() => {});
-  }
+  touchLastUsed("mcp_api_keys", row.id as string);
 
   return {
     id: row.id as string,
@@ -89,7 +92,7 @@ export async function resolveOAuthToken(rawToken: string): Promise<ApiKeyRecord 
   const tokenHash = hashApiKey(rawToken);
 
   const result = await query(
-    `SELECT id, tenant_type, tenant_id, client_id, scopes
+    `SELECT id, tenant_type, tenant_id, client_id, scopes, resource
      FROM oauth_access_tokens
      WHERE token_hash = $1
        AND revoked_at IS NULL
@@ -101,14 +104,22 @@ export async function resolveOAuthToken(rawToken: string): Promise<ApiKeyRecord 
 
   const row = result.rows[0];
 
-  // Throttled last_used_at update (at most once per 5 min per token)
-  const oauthNow = Date.now();
-  const oauthCacheKey = `oauth:${row.id as string}`;
-  const oauthLastFlushed = lastUsedCache.get(oauthCacheKey) ?? 0;
-  if (oauthNow - oauthLastFlushed > LAST_USED_THROTTLE_MS) {
-    lastUsedCache.set(oauthCacheKey, oauthNow);
-    query("UPDATE oauth_access_tokens SET last_used_at = NOW() WHERE id = $1", [row.id]).catch(() => {});
+  // RFC 8707: if the token was issued for a specific resource, verify it
+  // matches this server's resource URL (prevents token misuse across services).
+  // Normalize trailing slashes — Claude.ai sends "https://host/" while the
+  // server config typically omits the trailing slash.
+  const tokenResource = (row.resource as string | null)?.replace(/\/+$/, "") || null;
+  const serverResource = process.env.MCP_RESOURCE_URL?.replace(/\/+$/, "");
+  if (tokenResource && serverResource && tokenResource !== serverResource) {
+    log.warn("OAuth token resource mismatch — rejecting", {
+      tokenId: row.id as string,
+      tokenResource,
+      serverResource,
+    });
+    return null;
   }
+
+  touchLastUsed("oauth_access_tokens", row.id as string);
 
   const scopes = (row.scopes as string[]) || [];
 
@@ -191,7 +202,15 @@ export const ALL_MODULE_SCOPES: ModuleScope[] = [
 
 export function checkScope(record: ApiKeyRecord, required: ToolScope): boolean {
   // Empty scopes = unrestricted (backwards compat for keys created before scopes)
-  if (record.scopes.length === 0) return true;
+  // Log a warning so these legacy keys are visible in production observability
+  if (record.scopes.length === 0) {
+    log.warn("API key with empty scopes granted full access — migrate to explicit scopes", {
+      keyId: record.id,
+      tenantId: record.tenantId,
+      required,
+    });
+    return true;
+  }
 
   const scopes = record.scopes;
 

@@ -80,17 +80,40 @@ export function tenantWhere(
   };
 }
 
+const MAX_SUCCESS_RESPONSE_CHARS = 100_000; // ~25K tokens — prevents multi-MB responses
+
 export function successResponse(data: unknown): CallToolResult {
   const payload = { success: true, data };
+  const text = JSON.stringify(payload);
+
+  if (text.length > MAX_SUCCESS_RESPONSE_CHARS) {
+    // Return a valid JSON summary without the oversized data — avoids broken
+    // JSON from mid-string slicing and doesn't hold the full payload in memory
+    const summaryPayload = {
+      success: true,
+      _truncated: true,
+      _originalSizeChars: text.length,
+      _hint: "Response exceeded size limit. Use tighter filters, lower limit, or specific ID lookups to reduce response size.",
+    };
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(summaryPayload),
+          annotations: { audience: ["user", "assistant"] as const },
+        },
+      ],
+    } as CallToolResult;
+  }
+
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify(payload),
+        text,
         annotations: { audience: ["user", "assistant"] as const },
       },
     ],
-    structuredContent: payload,
   } as CallToolResult;
 }
 
@@ -107,7 +130,7 @@ export function errorResponse(
   requestId?: string,
 ): CallToolResult {
   const safeMessage =
-    isProduction && isInternalError(message)
+    isProduction && !isUserFacingError(message)
       ? `Internal error${requestId ? ` (ref: ${requestId})` : ""}. Contact support if this persists.`
       : enrichError(message);
 
@@ -123,27 +146,53 @@ export function errorResponse(
         annotations: { audience: ["assistant"] as const },
       },
     ],
-    structuredContent: body,
     isError: true,
   } as CallToolResult;
 }
 
 /**
- * Heuristic: errors that likely contain internal details (DB messages, stack traces).
- * User-facing validation errors (e.g. "Exactly one of clientId...") pass through.
+ * Whitelist approach: only known user-facing error messages pass through in production.
+ * Everything else is masked. This is safer than blacklisting internal patterns because
+ * new Postgres error categories are automatically masked instead of leaking.
  */
-function isInternalError(message: string): boolean {
+function isUserFacingError(message: string): boolean {
   const patterns = [
-    /relation ".*" does not exist/i,
-    /column ".*" does not exist/i,
-    /syntax error at or near/i,
-    /connection refused/i,
-    /timeout expired/i,
-    /ECONNREFUSED/,
-    /duplicate key value/i,
-    /violates.*constraint/i,
-    /stack:/i,
-    /at\s+\S+\s+\(.*:\d+:\d+\)/,
+    /^Exactly one of/,
+    /not found/i,
+    /already exists/i,
+    /already inactive/i,
+    /already assigned/i,
+    /Cannot transition/i,
+    /Cannot deactivate/i,
+    /Cannot close period/i,
+    /Cannot record payment/i,
+    /Invalid.*format/i,
+    /Invalid status transition/i,
+    /Invalid amount/i,
+    /must be/i,
+    /must reference/i,
+    /must include/i,
+    /must start with/i,
+    /must appear/i,
+    /Insufficient permissions/i,
+    /No fields to update/i,
+    /is closed/i,
+    /is inactive/i,
+    /is a header account/i,
+    /is unbalanced/i,
+    /does not belong/i,
+    /do not belong/i,
+    /Forbidden SQL/i,
+    /\$TENANT_FILTER/,
+    /Only SELECT/i,
+    /not available in the sandbox/i,
+    /Tool call limit/i,
+    /Script too long/i,
+    /Script timed out/i,
+    /Payment of .* exceeds/i,
+    /No account balances/i,
+    /draft journal entries remain/i,
+    /Unsupported entity type/i,
   ];
   return patterns.some((p) => p.test(message));
 }

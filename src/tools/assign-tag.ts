@@ -43,10 +43,33 @@ export async function assignTag(args: {
         return errorResponse("Tag not found or does not belong to this tenant.");
       }
 
+      // Verify entity exists and belongs to tenant
+      const ENTITY_TABLES: Record<string, string> = {
+        customer: "customers",
+        vendor: "vendors",
+        invoice: "invoices",
+        bill: "bills",
+        quotation: "quotations",
+        purchase_order: "purchase_orders",
+      };
+      const entityTable = ENTITY_TABLES[args.entityType];
+      if (!entityTable) {
+        return errorResponse(`Unsupported entity type: ${args.entityType}`);
+      }
+      const entityTw = tenantWhere(tenant, 2);
+      const entityCheck = await client.query(
+        `SELECT id FROM ${entityTable} WHERE id = $1 AND ${entityTw.sql}`,
+        [args.entityId, ...entityTw.params],
+      );
+      if (entityCheck.rows.length === 0) {
+        return errorResponse("Entity not found or does not belong to this tenant.");
+      }
+
       // Check for duplicate assignment
+      const dupTw = tenantWhere(tenant, 4);
       const dupResult = await client.query(
-        `SELECT id FROM entity_tags WHERE tag_id = $1 AND entity_id = $2 AND entity_type = $3`,
-        [args.tagId, args.entityId, args.entityType],
+        `SELECT id FROM entity_tags WHERE tag_id = $1 AND entity_id = $2 AND entity_type = $3 AND ${dupTw.sql}`,
+        [args.tagId, args.entityId, args.entityType, ...dupTw.params],
       );
       if (dupResult.rows.length > 0) {
         return errorResponse(`Tag "${tagResult.rows[0].name}" is already assigned to this entity.`);

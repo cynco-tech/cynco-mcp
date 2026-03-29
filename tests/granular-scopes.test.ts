@@ -138,8 +138,8 @@ describe("TOOL_SCOPE_MAP", () => {
     }
   });
 
-  it("getToolScope falls back to 'read' for unknown tools", () => {
-    expect(getToolScope("nonexistent_tool")).toBe("read");
+  it("getToolScope throws for unknown tools (fail-closed)", () => {
+    expect(() => getToolScope("nonexistent_tool")).toThrow("has no scope mapping");
   });
 
   it("maps accounting tools correctly", () => {

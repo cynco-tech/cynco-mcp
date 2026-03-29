@@ -9,13 +9,14 @@ import {
   successResponse,
   errorResponse,
 } from "../utils/validation.js";
+import { validateTenantUser } from "../utils/tools.js";
 
 export const recordPaymentSchema = {
   clientId: z.string().optional().describe("Client ID (XOR with accountingFirmId)"),
   accountingFirmId: z.string().optional().describe("Accounting firm ID (XOR with clientId)"),
   entityId: z.string().describe("Customer or vendor ID (cust_... or vend_...)"),
   entityType: z.enum(["customer", "vendor"]).describe("Whether this payment is for a customer or vendor"),
-  amount: z.number().positive().describe("Payment amount (positive number)"),
+  amount: z.number().positive().finite().describe("Payment amount (positive finite number)"),
   paymentDate: z.string().describe("Payment date (YYYY-MM-DD)"),
   paymentMethod: z.string().optional().describe("Payment method (e.g. bank_transfer, cash, cheque, card)"),
   referenceNumber: z.string().optional().describe("Payment reference number"),
@@ -66,6 +67,12 @@ export async function recordPayment(args: {
     }
 
     return await withTransaction(async (client: pg.PoolClient) => {
+      // Verify user exists and belongs to tenant
+      const userCheck = await validateTenantUser(client, args.createdBy, tenant, "createdBy");
+      if (!userCheck.valid) {
+        return errorResponse(userCheck.error);
+      }
+
       // Verify entity belongs to tenant
       const entityTable = args.entityType === "customer" ? "customers" : "vendors";
       const entityWhere = tenantWhere(tenant, 2);
@@ -80,13 +87,18 @@ export async function recordPayment(args: {
         );
       }
 
-      // If invoiceId provided, verify it belongs to tenant and the customer matches
+      // If invoiceId provided, verify it belongs to tenant, the customer matches,
+      // and the payment doesn't exceed the remaining balance.
+      // FOR UPDATE lock acquired here (before INSERT) to prevent concurrent
+      // payments from causing lost updates and to block overpayment before
+      // the payment row is committed.
       if (args.invoiceId) {
         const invWhere = tenantWhere(tenant, 2);
         const invResult = await client.query(
           `SELECT id, customer_id, total_amount, paid_amount, status
            FROM invoices
-           WHERE id = $1 AND ${invWhere.sql}`,
+           WHERE id = $1 AND ${invWhere.sql}
+           FOR UPDATE`,
           [args.invoiceId, ...invWhere.params],
         );
         if (invResult.rows.length === 0) {
@@ -105,15 +117,29 @@ export async function recordPayment(args: {
             `Cannot record payment against a ${invStatus} invoice. Finalize or un-void it first.`,
           );
         }
+
+        // Overpayment guard — checked BEFORE INSERT to avoid orphan payment rows
+        const totalAmount = parseFloat(invResult.rows[0].total_amount as string);
+        const currentPaid = parseFloat((invResult.rows[0].paid_amount ?? "0") as string);
+        const remaining = totalAmount - currentPaid;
+        if (args.amount > remaining && remaining >= 0) {
+          return errorResponse(
+            `Payment of ${args.amount} exceeds remaining balance. ` +
+            `Invoice total: ${totalAmount.toFixed(2)}, already paid: ${currentPaid.toFixed(2)}, remaining: ${remaining.toFixed(2)}.`,
+          );
+        }
       }
 
-      // If billId provided, verify it belongs to tenant and the vendor matches
+      // If billId provided, verify it belongs to tenant, the vendor matches,
+      // and the payment doesn't exceed the remaining balance.
+      // FOR UPDATE lock prevents concurrent payments from causing overpayment.
       if (args.billId) {
         const billWhere = tenantWhere(tenant, 2);
         const billResult = await client.query(
-          `SELECT id, vendor_id, total_amount, status
+          `SELECT id, vendor_id, total_amount, paid_amount, status
            FROM bills
-           WHERE id = $1 AND ${billWhere.sql}`,
+           WHERE id = $1 AND ${billWhere.sql}
+           FOR UPDATE`,
           [args.billId, ...billWhere.params],
         );
         if (billResult.rows.length === 0) {
@@ -124,6 +150,23 @@ export async function recordPayment(args: {
         if (args.entityType === "vendor" && billResult.rows[0].vendor_id !== args.entityId) {
           return errorResponse(
             "Bill does not belong to the specified vendor.",
+          );
+        }
+        const billStatus = billResult.rows[0].status as string;
+        if (billStatus === "void" || billStatus === "draft") {
+          return errorResponse(
+            `Cannot record payment against a ${billStatus} bill. Finalize or un-void it first.`,
+          );
+        }
+
+        // Overpayment guard — checked BEFORE INSERT to avoid orphan payment rows
+        const billTotal = parseFloat(billResult.rows[0].total_amount as string);
+        const billPaid = parseFloat((billResult.rows[0].paid_amount ?? "0") as string);
+        const billRemaining = billTotal - billPaid;
+        if (args.amount > billRemaining && billRemaining >= 0) {
+          return errorResponse(
+            `Payment of ${args.amount} exceeds remaining balance. ` +
+            `Bill total: ${billTotal.toFixed(2)}, already paid: ${billPaid.toFixed(2)}, remaining: ${billRemaining.toFixed(2)}.`,
           );
         }
       }
@@ -170,7 +213,9 @@ export async function recordPayment(args: {
         ],
       );
 
-      // If invoiceId: update invoice paidAmount and potentially change status
+      // If invoiceId: update invoice paid_amount and status.
+      // The FOR UPDATE lock was already acquired in the pre-INSERT validation above,
+      // so this read sees the locked row and no concurrent payment can interleave.
       if (args.invoiceId) {
         const invWhere = tenantWhere(tenant, 2);
         const invRow = await client.query(
@@ -185,12 +230,7 @@ export async function recordPayment(args: {
           const currentPaid = parseFloat((invRow.rows[0].paid_amount ?? "0") as string);
           const newPaid = currentPaid + args.amount;
 
-          let newStatus: string;
-          if (newPaid >= totalAmount) {
-            newStatus = "paid";
-          } else {
-            newStatus = "partially_paid";
-          }
+          const newStatus = newPaid >= totalAmount ? "paid" : "partially_paid";
 
           const updTw = tenantWhere(tenant, 4);
           await client.query(
@@ -198,6 +238,35 @@ export async function recordPayment(args: {
              SET paid_amount = $1, status = $2, updated_at = NOW()
              WHERE id = $3 AND ${updTw.sql}`,
             [newPaid, newStatus, args.invoiceId, ...updTw.params],
+          );
+        }
+      }
+
+      // If billId: update bill paid_amount and status.
+      // The FOR UPDATE lock was already acquired in the pre-INSERT validation above,
+      // so this read sees the locked row and no concurrent payment can interleave.
+      if (args.billId) {
+        const billWhere = tenantWhere(tenant, 2);
+        const billRow = await client.query(
+          `SELECT total_amount, paid_amount
+           FROM bills
+           WHERE id = $1 AND ${billWhere.sql}`,
+          [args.billId, ...billWhere.params],
+        );
+
+        if (billRow.rows.length > 0) {
+          const totalAmount = parseFloat(billRow.rows[0].total_amount as string);
+          const currentPaid = parseFloat((billRow.rows[0].paid_amount ?? "0") as string);
+          const newPaid = currentPaid + args.amount;
+
+          const newStatus = newPaid >= totalAmount ? "paid" : "partially_paid";
+
+          const updTw = tenantWhere(tenant, 4);
+          await client.query(
+            `UPDATE bills
+             SET paid_amount = $1, status = $2, updated_at = NOW()
+             WHERE id = $3 AND ${updTw.sql}`,
+            [newPaid, newStatus, args.billId, ...updTw.params],
           );
         }
       }

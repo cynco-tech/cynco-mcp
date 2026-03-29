@@ -8,6 +8,7 @@ import {
   successResponse,
   errorResponse,
 } from "../utils/validation.js";
+import { validateTenantUser } from "../utils/tools.js";
 
 export const reconcileAccountsSchema = {
   clientId: z.string().optional().describe("Client ID (XOR with accountingFirmId)"),
@@ -33,13 +34,10 @@ export async function reconcileAccounts(args: {
     }
 
     return await withTransaction(async (client: pg.PoolClient) => {
-      // Validate user exists
-      const userResult = await client.query(
-        `SELECT id FROM users WHERE id = $1`,
-        [args.reconciledBy],
-      );
-      if (userResult.rows.length === 0) {
-        return errorResponse(`User not found: ${args.reconciledBy}.`);
+      // Validate user exists and belongs to tenant
+      const userCheck = await validateTenantUser(client, args.reconciledBy, tenant, "reconciledBy");
+      if (!userCheck.valid) {
+        return errorResponse(userCheck.error);
       }
 
       // Verify all GL entries exist and belong to tenant (via journal_entries)

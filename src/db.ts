@@ -8,14 +8,31 @@ const rawDatabaseUrl = process.env.CYNCO_DATABASE_URL || "";
 const requiresSsl = rawDatabaseUrl.includes("sslmode=require");
 const databaseUrl = rawDatabaseUrl.replace(/[?&]sslmode=[^&]*/g, "");
 
+const statementTimeout = parseInt(process.env.MCP_DB_STATEMENT_TIMEOUT || "30000", 10) || 30000;
+
+// pg-pool's onConnect is awaited before handing the client to callers, unlike
+// the EventEmitter "connect" event which fires-and-forgets. @types/pg doesn't
+// include onConnect yet, so we cast.
+type PoolConfigWithOnConnect = pg.PoolConfig & {
+  onConnect?: (client: pg.PoolClient) => Promise<void>;
+};
+
 const pool = new Pool({
   connectionString: databaseUrl,
   max: parseInt(process.env.MCP_DB_POOL_MAX || "5", 10),
   idleTimeoutMillis: parseInt(process.env.MCP_DB_POOL_IDLE_TIMEOUT || "30000", 10),
+  connectionTimeoutMillis: parseInt(process.env.MCP_DB_CONN_TIMEOUT || "10000", 10),
+  // query_timeout is client-side (node-postgres), safe with PgBouncer transaction pooling.
+  // statement_timeout as a connection parameter is rejected by PgBouncer.
+  query_timeout: statementTimeout,
+  // Set server-side statement_timeout on each new connection via PgBouncer-safe SET command.
+  onConnect: async (client: pg.PoolClient) => {
+    await client.query("SELECT set_config('statement_timeout', $1::text, false)", [statementTimeout]);
+  },
   ssl: requiresSsl
     ? { rejectUnauthorized: false }
     : undefined,
-});
+} as PoolConfigWithOnConnect);
 
 pool.on("error", (err) => {
   process.stderr.write(JSON.stringify({
@@ -41,27 +58,6 @@ export async function withTransaction<T>(
     await client.query("BEGIN");
     const result = await fn(client);
     await client.query("COMMIT");
-    return result;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
-/**
- * Execute a function within a transaction that always rolls back.
- * Useful for dry-run validation — runs all the logic but commits nothing.
- */
-export async function withDryRun<T>(
-  fn: (client: pg.PoolClient) => Promise<T>,
-): Promise<T> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await fn(client);
-    await client.query("ROLLBACK");
     return result;
   } catch (error) {
     await client.query("ROLLBACK");

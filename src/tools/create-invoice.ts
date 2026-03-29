@@ -9,12 +9,13 @@ import {
   successResponse,
   errorResponse,
 } from "../utils/validation.js";
+import { validateTenantUser } from "../utils/tools.js";
 
 const lineItemSchema = z.object({
   description: z.string(),
-  quantity: z.number().min(0),
-  unitPrice: z.number(),
-  taxRate: z.number().optional(),
+  quantity: z.number().min(0).finite(),
+  unitPrice: z.number().finite(),
+  taxRate: z.number().min(0).finite().optional(),
   taxCode: z.string().optional(),
 });
 
@@ -50,15 +51,10 @@ export async function createInvoice(args: {
     validateTypeId(args.createdBy, "usr", "createdBy");
 
     return await withTransaction(async (client: pg.PoolClient) => {
-      // Verify user exists
-      const userResult = await client.query(
-        `SELECT id FROM users WHERE id = $1`,
-        [args.createdBy],
-      );
-      if (userResult.rows.length === 0) {
-        return errorResponse(
-          `User not found: ${args.createdBy}. createdBy must reference a valid user ID.`,
-        );
+      // Verify user exists and belongs to tenant
+      const userCheck = await validateTenantUser(client, args.createdBy, tenant, "createdBy");
+      if (!userCheck.valid) {
+        return errorResponse(userCheck.error);
       }
 
       // Verify customer exists and belongs to tenant
@@ -154,21 +150,16 @@ export async function createInvoice(args: {
       const pattern = `INV-${year}-%`;
 
       const invTw = tenantWhere(tenant, 1);
+      // Use CAST to extract numeric suffix — avoids lexicographic MAX bug
+      // where "9999" > "10000" causes duplicate numbers after 9999 invoices/year
       const maxResult = await client.query(
-        `SELECT MAX(invoice_number) as max_number FROM invoices
+        `SELECT MAX(CAST(SUBSTRING(invoice_number FROM '\\d+$') AS INTEGER)) as max_seq
+         FROM invoices
          WHERE ${invTw.sql} AND invoice_number LIKE $${invTw.nextParam}`,
         [...invTw.params, pattern],
       );
 
-      let nextSeq = 1;
-      if (maxResult.rows[0]?.max_number) {
-        const parts = (maxResult.rows[0].max_number as string).split("-");
-        const lastPart = parts[parts.length - 1];
-        const parsed = parseInt(lastPart, 10);
-        if (!isNaN(parsed)) {
-          nextSeq = parsed + 1;
-        }
-      }
+      const nextSeq = ((maxResult.rows[0]?.max_seq as number | null) ?? 0) + 1;
 
       const invoiceNumber = `INV-${year}-${String(nextSeq).padStart(4, "0")}`;
       const invoiceId = generateId("inv");

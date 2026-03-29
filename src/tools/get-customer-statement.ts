@@ -47,8 +47,9 @@ export async function getCustomerStatement(args: {
     }
     const customer = custResult.rows[0];
 
-    // Get invoices in date range
-    const twInv = tenantWhere(tenant, 3, "i");
+    // Get invoices in date range — use invoice_date with created_at fallback
+    // to match the Remix model's COALESCE(invoice_date, created_at) logic
+    const twInv = tenantWhere(tenant, 2, "i");
     const invoiceResult = await query(
       `SELECT
           i.id,
@@ -58,20 +59,21 @@ export async function getCustomerStatement(args: {
           i.paid_amount,
           i.currency,
           i.due_date,
-          i.created_at
+          COALESCE(i.invoice_date, i.created_at) AS effective_date
        FROM invoices i
        WHERE i.customer_id = $1
          AND ${twInv.sql}
-         AND i.created_at >= $${twInv.nextParam}::timestamp
-         AND i.created_at <= ($${twInv.nextParam + 1}::date + interval '1 day')
+         AND COALESCE(i.invoice_date, i.created_at) >= $${twInv.nextParam}::timestamp
+         AND COALESCE(i.invoice_date, i.created_at) <= ($${twInv.nextParam + 1}::date + interval '1 day' - interval '1 millisecond')
          AND i.status NOT IN ('draft', 'quotation')
          AND (i.is_archived = false OR i.is_archived IS NULL)
-       ORDER BY i.created_at`,
+       ORDER BY COALESCE(i.invoice_date, i.created_at)`,
       [args.customerId, ...twInv.params, fromDate, toDate],
     );
 
-    // Get payments in date range
-    const twPay = tenantWhere(tenant, 3, "ip");
+    // Get payments in date range — filter by payment_date (not created_at)
+    // to match the Remix model's getCustomerPaymentsInRange logic
+    const twPay = tenantWhere(tenant, 2, "i");
     const paymentResult = await query(
       `SELECT
           ip.id,
@@ -86,15 +88,16 @@ export async function getCustomerStatement(args: {
        JOIN invoices i ON i.id = ip.invoice_id
        WHERE i.customer_id = $1
          AND ${twPay.sql}
-         AND ip.created_at >= $${twPay.nextParam}::timestamp
-         AND ip.created_at <= ($${twPay.nextParam + 1}::date + interval '1 day')
+         AND ip.payment_date IS NOT NULL
+         AND ip.payment_date >= $${twPay.nextParam}::timestamp
+         AND ip.payment_date <= ($${twPay.nextParam + 1}::date + interval '1 day' - interval '1 millisecond')
          AND ip.status = 'completed'
        ORDER BY ip.payment_date`,
       [args.customerId, ...twPay.params, fromDate, toDate],
     );
 
     // Get credit/debit notes in date range
-    const twCdn = tenantWhere(tenant, 3, "cdn");
+    const twCdn = tenantWhere(tenant, 2, "cdn");
     const noteResult = await query(
       `SELECT
           cdn.id,
@@ -106,23 +109,38 @@ export async function getCustomerStatement(args: {
           cdn.remaining_amount,
           cdn.status,
           cdn.reason,
-          cdn.created_at
+          COALESCE(cdn.issued_at, cdn.created_at) AS effective_date
        FROM credit_debit_notes cdn
        WHERE cdn.customer_id = $1
          AND ${twCdn.sql}
-         AND cdn.created_at >= $${twCdn.nextParam}::timestamp
-         AND cdn.created_at <= ($${twCdn.nextParam + 1}::date + interval '1 day')
-         AND cdn.status != 'voided'
-       ORDER BY cdn.created_at`,
+         AND COALESCE(cdn.issued_at, cdn.created_at) >= $${twCdn.nextParam}::timestamp
+         AND COALESCE(cdn.issued_at, cdn.created_at) <= ($${twCdn.nextParam + 1}::date + interval '1 day' - interval '1 millisecond')
+         AND cdn.status NOT IN ('voided', 'draft')
+       ORDER BY COALESCE(cdn.issued_at, cdn.created_at)`,
       [args.customerId, ...twCdn.params, fromDate, toDate],
     );
+
+    // Calculate opening balance (before fromDate)
+    const twOb = tenantWhere(tenant, 2, "i");
+    const obResult = await query(
+      `SELECT
+          COALESCE(SUM(CAST(i.total_amount AS numeric) - CAST(COALESCE(i.paid_amount, '0') AS numeric)), 0) AS opening_balance
+       FROM invoices i
+       WHERE i.customer_id = $1
+         AND ${twOb.sql}
+         AND COALESCE(i.invoice_date, i.created_at) < $${twOb.nextParam}::timestamp
+         AND i.status IN ('finalized', 'paid', 'partially_paid', 'overdue', 'deposit_paid', 'deposit_due')
+         AND (i.is_archived = false OR i.is_archived IS NULL)`,
+      [args.customerId, ...twOb.params, fromDate],
+    );
+    const openingBalance = parseFloat((obResult.rows[0]?.opening_balance as string) ?? "0");
 
     // Build statement entries
     const invoices = invoiceResult.rows.map((r) => ({
       type: "invoice" as const,
       id: r.id,
       reference: r.invoice_number,
-      date: r.created_at,
+      date: r.effective_date,
       dueDate: r.due_date,
       status: r.status,
       amount: r.total_amount,
@@ -147,7 +165,7 @@ export async function getCustomerStatement(args: {
       id: r.id,
       reference: r.note_number,
       originalInvoiceId: r.original_invoice_id,
-      date: r.created_at,
+      date: r.effective_date,
       totalAmount: r.total_amount,
       appliedAmount: r.applied_amount,
       remainingAmount: r.remaining_amount,
@@ -158,13 +176,11 @@ export async function getCustomerStatement(args: {
     // Calculate totals
     let totalInvoiced = 0;
     let totalPaid = 0;
-    let totalOutstanding = 0;
     let totalCreditNotes = 0;
     let totalDebitNotes = 0;
 
     for (const inv of invoices) {
       totalInvoiced += parseFloat(inv.amount as string);
-      totalOutstanding += parseFloat(inv.outstanding);
     }
     for (const pay of payments) {
       totalPaid += parseFloat(pay.amount as string);
@@ -176,6 +192,8 @@ export async function getCustomerStatement(args: {
         totalDebitNotes += parseFloat(note.totalAmount as string);
       }
     }
+
+    const closingBalance = openingBalance + totalInvoiced + totalDebitNotes - totalPaid - totalCreditNotes;
 
     return successResponse({
       customer: {
@@ -191,11 +209,12 @@ export async function getCustomerStatement(args: {
       payments,
       creditDebitNotes: notes,
       summary: {
+        openingBalance: openingBalance.toFixed(2),
         totalInvoiced: totalInvoiced.toFixed(2),
         totalPaid: totalPaid.toFixed(2),
-        totalOutstanding: totalOutstanding.toFixed(2),
         totalCreditNotes: totalCreditNotes.toFixed(2),
         totalDebitNotes: totalDebitNotes.toFixed(2),
+        closingBalance: closingBalance.toFixed(2),
         invoiceCount: invoices.length,
         paymentCount: payments.length,
         noteCount: notes.length,

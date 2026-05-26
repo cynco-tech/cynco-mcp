@@ -232,7 +232,7 @@ function stripTenantFields<T extends Record<string, unknown>>(schema: T, isHttpM
  * @param authRecord - The authenticated API key record (HTTP mode only), for scope checks.
  */
 export function createServer(authTenant?: Tenant, authRecord?: ApiKeyRecord): McpServer {
-  const baseUrl = process.env.MCP_PUBLIC_URL || "https://mcp-stegona.cynco.io";
+  const baseUrl = process.env.MCP_PUBLIC_URL || "https://mcp.cynco.io";
   const isHttp = !!authTenant;
   const server = new McpServer({
     name: "cynco-accounting",

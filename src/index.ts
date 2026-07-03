@@ -45,7 +45,7 @@ try {
 } catch { /* not fatal */ }
 
 // ── MCP service discovery (built once at startup) ────────────────
-const MCP_PUBLIC_URL = process.env.MCP_PUBLIC_URL || "https://mcp-stegona.cynco.io";
+const MCP_PUBLIC_URL = process.env.MCP_PUBLIC_URL || "https://mcp.cynco.io";
 const APP_URL = process.env.APP_URL || "https://app.cynco.io";
 const mcpDescriptorJson = JSON.stringify({
   name: "cynco-accounting",
@@ -371,7 +371,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       scopes_supported: ["read", "write", "query:execute", "code:execute", ...ALL_MODULE_SCOPES],
       bearer_methods_supported: ["header"],
       resource_name: "Cynco Accounting MCP Server",
-      resource_documentation: "https://github.com/cynco-tech/cynco-mcp",
+      resource_documentation: "https://github.com/cynco-labs/cynco-mcp",
     }, requestId);
     return;
   }
